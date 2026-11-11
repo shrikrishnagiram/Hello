@@ -42,6 +42,38 @@ recognised, the app shows the columns it received instead of guessing.
   "no catalyst".
 - Probabilities are **market-implied** (what the chain prices), not forecasts.
 
+## Nifty 50 historical data (`nifty_data.py`)
+Downloads Nifty 50 index history, the live option chain, and the daily price history of
+Nifty options at **every strike** into CSV files in `data/`. Run it on your own computer or
+in Termux: NSE blocks cloud servers.
+
+```bash
+python nifty_data.py index --from 2015-01-01                      # daily OHLC of Nifty 50
+python nifty_data.py chain                                        # live chain, nearest 6 expiries
+python nifty_data.py chain --all-expiries
+python nifty_data.py options --from 2026-10-01 --to 2026-11-10    # all strikes, all expiries
+python nifty_data.py options --from 2026-10-01 --expiry 2026-11-24 --near 10 --pivot
+python nifty_data.py options --from 2026-10-01 --strikes 23500,24000,24500 --type PE
+python nifty_data.py contract --strike 24000 --type CE --expiry 2026-11-24 --from 2026-10-01
+```
+
+| Command | Source | Output |
+|---|---|---|
+| `index` | Yahoo `^NSEI` (fallback: NSE `ind_close_all` daily archive) | `nifty50_daily_*.csv`: date, OHLC, volume |
+| `chain` | NSE option-chain API | `nifty_chain_*.csv`: per strike CE/PE LTP, bid, ask, IV, OI, volume |
+| `options` | NSE F&O bhavcopy, one zip per trading day (UDiFF from 8-Jul-2024, old format before) | `nifty_options_*.csv`: date, expiry, strike, type, OHLC, close, settle, underlying, OI, OI change, volume |
+| `contract` | NSE `foCPV` API (fallback: bhavcopies) | one strike's daily history |
+
+- `--near N` keeps N strikes on each side of that day's spot; `--min-strike`/`--max-strike`
+  and `--strikes` narrow further. `--pivot` also writes a date × strike matrix
+  (`--pivot-value close|settle|oi|volume`).
+- Bhavcopies are cached in `data/bhav_cache/`, so a re-run or a different filter
+  over the same dates doesn't download again. Holidays are skipped.
+- End-of-day data only: bhavcopies have no bid/ask or IV. Intraday option history
+  isn't published free by NSE; you'd need a broker API (Kite, Upstox, etc.).
+- The old-format bhavcopy (before 8-Jul-2024) has no underlying price or traded quantity
+  column; those fields are blank. Join with `index` output for spot.
+
 ## The app (recommended)
 A local web app that shows the same scan visually: wing cards, the cost of a pair, a chart
 of premium by strike, the catalyst calendar with countdowns, the full option chain, and a
