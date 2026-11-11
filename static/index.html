@@ -109,6 +109,10 @@ input, select { font-size: 16px; } /* stops Android/iOS zoom-on-focus */
 .mini { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
 .mini div { font-size: 11px; color: var(--text-3); }
 .mini span { display: block; font-size: 13px; color: var(--text); font-weight: 600; }
+.nomatch-title { font-size: 20px; font-weight: 700; margin: 4px 0 6px; }
+.card.dim .ref { opacity: .55; }
+.banner.stop { background: var(--err-bg); color: var(--err-text); border-color: var(--err-border); white-space: normal; }
+.banner.stop b.big { display: block; font-size: 17px; margin-bottom: 4px; }
 .total { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; margin: 4px 0 2px; }
 .muted { color: var(--text-3); font-size: 12px; }
 .placeholder { color: var(--text-3); padding: 28px 0; text-align: center; }
@@ -187,6 +191,7 @@ summary { cursor: pointer; font-weight: 600; color: var(--text-2); padding: 4px 
   <div id="err" class="banner err" hidden></div>
   <div class="status" id="status"></div>
 
+  <div id="verdict" class="banner stop" hidden></div>
   <div class="grid3">
     <div class="card" id="callCard"><div class="placeholder">Press <b>Scan</b> to load the chain.</div></div>
     <div class="card" id="putCard"><div class="placeholder">—</div></div>
@@ -322,9 +327,23 @@ function render(d) {
     `Source <b>${esc(d.source)}</b>`,
     `Fetched <b>${new Date(d.fetched_at).toLocaleTimeString()}</b>`,
   ].map(s => `<span>${s}</span>`).join("");
-  $("callCard").innerHTML = wingCard(d.call, "Call wing (CE)", "var(--call)", d);
-  $("putCard").innerHTML = wingCard(d.put, "Put wing (PE)", "var(--put)", d);
-  $("costCard").innerHTML = `
+  const T = `₹${d.target}`;
+  if (!d.matched) {
+    $("verdict").hidden = false;
+    $("verdict").innerHTML = `<b class="big">No ${T} strangle available right now</b>
+      Nothing on ${[!d.call.matched && "the call side", !d.put.matched && "the put side"].filter(Boolean).join(" or ")}
+      trades or is quoted within ₹${d.tolerance} of ${T} for ${esc(d.expiry)}. The strikes below are the closest ones,
+      shown <b>for information only — not a suggestion</b>.`;
+  } else $("verdict").hidden = true;
+  $("callCard").innerHTML = wingCard(d.call, "Call wing (CE)", "call", "var(--call)", d);
+  $("putCard").innerHTML = wingCard(d.put, "Put wing (PE)", "put", "var(--put)", d);
+  $("callCard").classList.toggle("dim", !d.call.matched);
+  $("putCard").classList.toggle("dim", !d.put.matched);
+  $("costCard").classList.toggle("dim", !d.matched);
+  $("costCard").innerHTML = !d.matched ? `
+    <h2>Cost per pair</h2>
+    <div class="nomatch-title">No ${T} pair today</div>
+    <div class="muted">For reference only: the closest available pair would cost ₹${fmt(d.total_cost)} incl. charges (pair premium ₹${fmt(d.pair_premium)} × ${d.lot_size}). That is not a cheap strangle.</div>` : `
     <h2>Cost per pair (1 lot each)</h2>
     <div class="total">₹${fmt(d.total_cost)}</div>
     <div class="muted">incl. estimated charges</div>
@@ -337,16 +356,23 @@ function render(d) {
     <div class="muted" style="margin-top:10px">Breakeven range at expiry: ${fmt0(d.put.be)} – ${fmt0(d.call.be)}</div>`;
   if (d.warnings.length) {
     $("warn").hidden = false;
-    $("warn").innerHTML = "<b>Check before trusting these prices</b><ul>" + d.warnings.map(w => `<li>${esc(w)}</li>`).join("") + "</ul>";
+    $("warn").innerHTML = "<b>Details</b><ul>" + d.warnings.map(w => `<li>${esc(w)}</li>`).join("") + "</ul>";
   } else $("warn").hidden = true;
   drawChart(d);
   renderChain(d);
 }
 
-function wingCard(w, title, color, d) {
+function wingCard(w, title, side, color, d) {
+  const basis = w.basis === "LTP" ? "LTP" : "Ask (no trades today)";
+  const head = w.matched
+    ? `<div><span class="wing-strike">${fmt0(w.strike)}</span><span class="wing-ltp">${basis} ₹${fmt(w.price)}</span></div>`
+    : `<div class="nomatch-title">No ₹${d.target} ${side} found</div>
+       <div class="muted">${esc(w.reason)}</div>
+       <div class="ref" style="margin-top:10px"><b>Closest:</b> ${fmt0(w.strike)} at ₹${fmt(w.price)} (${basis}${w.price > d.target ? `, ${(w.price / d.target).toFixed(1)}× your target` : ""})</div>`;
   return `
     <div class="wing-head"><span class="swatch" style="background:${color}"></span><h2 style="margin:0">${title}</h2></div>
-    <div><span class="wing-strike">${fmt0(w.strike)}</span><span class="wing-ltp">LTP ₹${fmt(w.ltp)}</span></div>
+    ${head}
+    <div class="ref">
     <dl class="kv">
       <dt>Distance from spot</dt><dd>${sgn(w.dist, 0)} pts (${sgn(w.dist_pct)}%)</dd>
       <dt>Breakeven at expiry</dt><dd>${fmt0(w.be)}</dd>
@@ -358,6 +384,7 @@ function wingCard(w, title, color, d) {
       <div>IV %<span>${fmt(w.iv, 1)}</span></div>
       <div>OI<span>${fmt0(w.oi)}</span></div>
       <div>Volume<span>${fmt0(w.volume)}</span></div>
+    </div>
     </div>`;
 }
 
@@ -366,12 +393,13 @@ function drawChart(d) {
   const svg = $("chart"), box = $("chartBox"), tip = $("tip");
   const W = box.clientWidth || 600, H = 320, m = { l: 48, r: 14, t: 12, b: 30 };
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-  const lo = d.spot * 0.8, hi = d.spot * 1.2;
+  const lo = Math.max(d.spot * 0.65, Math.min(d.spot * 0.8, d.put.strike - 1000)),
+        hi = Math.min(d.spot * 1.35, Math.max(d.spot * 1.2, d.call.strike + 1000));
   const ce = d.chain.filter(r => r.strike >= d.spot - 200 && r.strike <= hi && r.ce_ltp > 0).map(r => [r.strike, r.ce_ltp, r]);
   const pe = d.chain.filter(r => r.strike <= d.spot + 200 && r.strike >= lo && r.pe_ltp > 0).map(r => [r.strike, r.pe_ltp, r]);
   const all = ce.concat(pe);
   if (!all.length) { svg.innerHTML = ""; return; }
-  const xs = all.map(p => p[0]), ys = all.map(p => p[1]);
+  const xs = all.map(p => p[0]), ys = all.map(p => p[1]).concat([d.call.price, d.put.price]);
   const x0 = Math.min(...xs), x1 = Math.max(...xs);
   const yMin = Math.max(0.05, Math.min(...ys, d.target) * 0.8), yMax = Math.max(...ys, d.target) * 1.15;
   const L = Math.log10;
@@ -399,10 +427,14 @@ function drawChart(d) {
         <path d="${path(pe)}" fill="none" stroke="var(--put)" stroke-width="2" stroke-linejoin="round"/>`;
   // selected wings
   for (const [w, c, lab] of [[d.call, "var(--call)", "CE"], [d.put, "var(--put)", "PE"]]) {
-    const cx = X(w.strike), cy = Y(w.ltp);
+    const cx = X(w.strike), cy = Y(w.price);
     // labels sit outward (PE left, CE right) and below the dot, clear of the curve
-    const anchor = lab === "CE" ? "start" : "end", dx = lab === "CE" ? 8 : -8;
-    const txt = W < 520 ? `₹${fmt(w.ltp)}` : `${lab} ${fmt0(w.strike)} · ₹${fmt(w.ltp)}`;
+    const txt = W < 520 ? `₹${fmt(w.price)}` : `${lab} ${fmt0(w.strike)} · ₹${fmt(w.price)}${w.matched ? "" : " (no match)"}`;
+    // outward (PE left, CE right) unless that would run off the plot -- then flip inward
+    const tw = txt.length * 6.6;
+    let anchor = lab === "CE" ? "start" : "end", dx = lab === "CE" ? 8 : -8;
+    if (lab === "CE" && cx + 8 + tw > W - m.r) { anchor = "end"; dx = -8; }
+    if (lab === "PE" && cx - 8 - tw < m.l) { anchor = "start"; dx = 8; }
     g += `<circle cx="${cx}" cy="${cy}" r="5" fill="${c}" stroke="var(--surface)" stroke-width="2"/>
           <text x="${cx + dx}" y="${cy + 18}" text-anchor="${anchor}" style="fill:var(--text);font-weight:600">${txt}</text>`;
   }
@@ -438,8 +470,7 @@ window.addEventListener("resize", () => last && drawChart(last));
 
 // ---------- chain table ----------
 function renderChain(d) {
-  const lo = d.spot * 0.8, hi = d.spot * 1.2;
-  const rows = d.chain.filter(r => r.strike >= lo && r.strike <= hi);
+  const rows = d.chain;
   let atmDone = false;
   const body = rows.map(r => {
     let cls = [];
@@ -449,14 +480,14 @@ function renderChain(d) {
     const nxt = rows[rows.indexOf(r) + 1];
     if (r.strike < d.spot && nxt && nxt.strike >= d.spot) cls.push("atm");
     return `<tr class="${cls.join(" ")}">
-      <td class="ce">${fmt0(r.ce_oi)}</td><td class="ce">${fmt0(r.ce_vol)}</td><td class="ce">${fmt(r.ce_iv, 1)}</td><td class="ce">${fmt(r.ce_ltp)}</td>
+      <td class="ce">${fmt0(r.ce_oi)}</td><td class="ce">${fmt0(r.ce_vol)}</td><td class="ce">${fmt(r.ce_iv, 1)}</td><td class="ce">${fmt(r.ce_ltp)}</td><td class="ce">${fmt(r.ce_ask)}</td>
       <td class="strike">${fmt0(r.strike)}</td>
-      <td class="pe">${fmt(r.pe_ltp)}</td><td class="pe">${fmt(r.pe_iv, 1)}</td><td class="pe">${fmt0(r.pe_vol)}</td><td class="pe">${fmt0(r.pe_oi)}</td></tr>`;
+      <td class="pe">${fmt(r.pe_ask)}</td><td class="pe">${fmt(r.pe_ltp)}</td><td class="pe">${fmt(r.pe_iv, 1)}</td><td class="pe">${fmt0(r.pe_vol)}</td><td class="pe">${fmt0(r.pe_oi)}</td></tr>`;
   }).join("");
   $("chainTbl").innerHTML = `<table><thead><tr>
-    <th>CE OI</th><th>CE Vol</th><th>CE IV</th><th>CE LTP</th><th style="text-align:center">Strike</th>
-    <th>PE LTP</th><th>PE IV</th><th>PE Vol</th><th>PE OI</th></tr></thead><tbody>${body}</tbody></table>
-    <div class="muted" style="padding:6px 2px">Strikes within ±20% of spot. Thick rule = spot. Highlighted = selected wings.</div>`;
+    <th>CE OI</th><th>CE Vol</th><th>CE IV</th><th>CE LTP</th><th>CE Ask</th><th style="text-align:center">Strike</th>
+    <th>PE Ask</th><th>PE LTP</th><th>PE IV</th><th>PE Vol</th><th>PE OI</th></tr></thead><tbody>${body}</tbody></table>
+    <div class="muted" style="padding:6px 2px">All listed strikes. Thick rule = spot. Highlighted = closest strikes to your target. Ask 0/— = nobody selling.</div>`;
 }
 
 // ---------- history ----------
@@ -465,11 +496,11 @@ async function loadHistory() {
     const { rows } = await (await fetch("/api/history")).json();
     if (!rows.length) return;
     $("histTbl").innerHTML = `<table><thead><tr>
-      <th style="text-align:left">Fetched</th><th>Expiry</th><th>Spot</th><th>CE strike</th><th>CE ₹</th><th>CE IV</th>
+      <th style="text-align:left">Fetched</th><th>Expiry</th><th>Spot</th><th>Match</th><th>CE strike</th><th>CE ₹</th><th>CE IV</th>
       <th>PE strike</th><th>PE ₹</th><th>PE IV</th><th>Pair ₹</th><th>Total ₹</th></tr></thead><tbody>${
       rows.map(r => `<tr><td style="text-align:left">${esc(r.fetched_at.replace("T", " "))}</td><td>${esc(r.expiry)}</td>
-        <td>${fmt(+r.spot)}</td><td>${fmt0(+r.ce_strike)}</td><td>${fmt(+r.ce_ltp)}</td><td>${r.ce_iv ? fmt(+r.ce_iv, 1) : "—"}</td>
-        <td>${fmt0(+r.pe_strike)}</td><td>${fmt(+r.pe_ltp)}</td><td>${r.pe_iv ? fmt(+r.pe_iv, 1) : "—"}</td>
+        <td>${fmt(+r.spot)}</td><td>${esc(r.matched || "—")}</td><td>${fmt0(+r.ce_strike)}</td><td>${fmt(+(r.ce_price ?? r.ce_ltp))}</td><td>${r.ce_iv ? fmt(+r.ce_iv, 1) : "—"}</td>
+        <td>${fmt0(+r.pe_strike)}</td><td>${fmt(+(r.pe_price ?? r.pe_ltp))}</td><td>${r.pe_iv ? fmt(+r.pe_iv, 1) : "—"}</td>
         <td>${fmt(+r.pair_premium)}</td><td>${fmt(+r.total_cost)}</td></tr>`).join("")
     }</tbody></table><div class="muted" style="padding:6px 2px">Saved to data/${cfg && cfg.demo ? "scan_log_demo.csv" : "scan_log.csv"} (latest first).</div>`;
   } catch (e) {}

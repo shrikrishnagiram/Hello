@@ -57,9 +57,12 @@ python banknifty_strangle.py --from-json data/banknifty_raw_XXXX.json   # offlin
 | `--out-dir` | `data` | output folder (gitignored) |
 
 ## How it works
-- **Wing selection:** among OTM strikes with LTP > 0 (calls above spot, puts below
-  spot), it picks the strike with the LTP closest to the target. On a tie it picks the
-  strike with the higher OI.
+- **Wing selection:** among OTM strikes (calls above spot, puts below spot), it finds the
+  one whose buy price is closest to the target. The buy price is the LTP, or the ask if
+  the strike hasn't traded today. A wing counts as a **match** only if its price is within
+  ±max(₹2, 50% of target) of the target (±₹4 for ₹8). With no match, the app says
+  **"No ₹8 strangle available"**, explains how far out strikes are trading, and shows the
+  closest strikes greyed out for reference only.
 - **Breakevens:** call BE = call strike + pair premium; put BE = put strike − pair
   premium. "Move %" is the distance from spot to the breakeven.
 - **Warnings** appear for zero-volume legs (the LTP may be stale), bid/ask spreads wider

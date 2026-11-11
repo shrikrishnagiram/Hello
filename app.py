@@ -39,8 +39,8 @@ STATIC_FILES = {
     "/icon-512.png": ("icon-512.png", "image/png"),
     "/icon.svg": ("icon.svg", "image/svg+xml"),
 }
-LOG_FIELDS = ["fetched_at", "nse_timestamp", "source", "expiry", "spot",
-              "ce_strike", "ce_ltp", "ce_iv", "pe_strike", "pe_ltp", "pe_iv",
+LOG_FIELDS = ["fetched_at", "nse_timestamp", "source", "expiry", "spot", "target", "matched",
+              "ce_strike", "ce_price", "ce_iv", "pe_strike", "pe_price", "pe_iv",
               "pair_premium", "total_cost"]
 
 # Catalyst calendar from the project brief -- dates must be re-verified.
@@ -66,6 +66,8 @@ class State:
         self.last_chain: bs.Chain | None = None
 
     def get_raw(self, expiry_nse: str, source: str, force: bool) -> tuple[dict, str]:
+        if getattr(self, "replay", None):
+            return self.replay, "replay file (NOT live data)"
         if self.demo:
             return demo_chain(expiry_nse), "demo (synthetic -- NOT market data)"
         key = (expiry_nse, source)
@@ -79,9 +81,14 @@ class State:
         return data, src
 
 
-def wing_dict(q: bs.Quote, spot: float, be: float) -> dict:
+def wing_dict(w: bs.Wing, spot: float, be: float, target: float) -> dict:
+    q = w.quote
     d = asdict(q)
-    d.update(dist=q.strike - spot, dist_pct=bs.pct(q.strike, spot),
+    d.update(price=w.price, basis=w.basis, matched=w.matched,
+             reason=None if w.matched else bs.no_match_reason(w, target),
+             farthest_listed=w.farthest_listed, farthest_traded=w.farthest_traded,
+             farthest_quoted=w.farthest_quoted,
+             dist=q.strike - spot, dist_pct=bs.pct(q.strike, spot),
              be=be, move=be - spot, move_pct=bs.pct(be, spot))
     return d
 
@@ -123,8 +130,9 @@ def scan(state: State, params: dict) -> dict:
         "ok": True, "demo": state.demo, "expiry": chain.expiry, "spot": chain.spot,
         "timestamp": chain.timestamp, "source": chain.source, "dte": dte, "target": target,
         "fetched_at": datetime.now().isoformat(timespec="seconds"),
-        "call": wing_dict(rep.call, rep.spot, rep.call_be),
-        "put": wing_dict(rep.put, rep.spot, rep.put_be),
+        "call": wing_dict(rep.call_wing, rep.spot, rep.call_be, target),
+        "put": wing_dict(rep.put_wing, rep.spot, rep.put_be, target),
+        "matched": rep.matched, "tolerance": bs.tolerance_for(target),
         "pair_premium": rep.pair_premium, "lot_size": rep.lot_size,
         "premium_cost": rep.premium_cost, "charges": rep.charges, "total_cost": rep.total_cost,
         "warnings": bs.wing_warnings(rep, target),
@@ -142,6 +150,11 @@ def log_path(state: State) -> Path:
 def append_log(state: State, r: dict) -> None:
     path = log_path(state)
     path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        with path.open(newline="") as fh:
+            header = next(csv.reader(fh), [])
+        if header != LOG_FIELDS:  # older format: keep it, start a fresh file
+            path.rename(path.with_name(f"{path.stem}_old_{datetime.now():%Y%m%d_%H%M%S}.csv"))
     new = not path.exists()
     with state.lock, path.open("a", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=LOG_FIELDS)
@@ -149,9 +162,10 @@ def append_log(state: State, r: dict) -> None:
             w.writeheader()
         w.writerow({
             "fetched_at": r["fetched_at"], "nse_timestamp": r["timestamp"], "source": r["source"],
-            "expiry": r["expiry"], "spot": r["spot"],
-            "ce_strike": r["call"]["strike"], "ce_ltp": r["call"]["ltp"], "ce_iv": r["call"]["iv"],
-            "pe_strike": r["put"]["strike"], "pe_ltp": r["put"]["ltp"], "pe_iv": r["put"]["iv"],
+            "expiry": r["expiry"], "spot": r["spot"], "target": r["target"],
+            "matched": "yes" if r["matched"] else "no",
+            "ce_strike": r["call"]["strike"], "ce_price": r["call"]["price"], "ce_iv": r["call"]["iv"],
+            "pe_strike": r["put"]["strike"], "pe_price": r["put"]["price"], "pe_iv": r["put"]["iv"],
             "pair_premium": round(r["pair_premium"], 2), "total_cost": round(r["total_cost"], 2),
         })
 
@@ -256,9 +270,11 @@ def main():
     ap.add_argument("--port", type=int, default=8050)
     ap.add_argument("--out-dir", type=Path, default=ROOT / bs.DEFAULT_OUT_DIR)
     ap.add_argument("--no-browser", action="store_true")
+    ap.add_argument("--replay", type=Path, help="serve a saved NSE JSON file instead of live data (testing)")
     args = ap.parse_args()
 
     state = State(args.demo, args.out_dir)
+    state.replay = json.loads(args.replay.read_text()) if args.replay else None
     srv = ThreadingHTTPServer((args.host, args.port), make_handler(state))
     url = f"http://{'127.0.0.1' if args.host in ('0.0.0.0', '') else args.host}:{args.port}"
     print(f"Bank Nifty strangle scanner running at {url}  ({'DEMO data' if args.demo else 'live NSE'})")

@@ -278,28 +278,83 @@ def parse_chain(data: dict, expiry_nse: str, source: str) -> Chain:
 # --------------------------------------------------------------------------- #
 # Selection & maths
 # --------------------------------------------------------------------------- #
-def pick_wing(chain: Chain, opt_type: str, target: float) -> Quote:
-    """OTM leg of given type whose LTP is nearest target (ties -> higher OI)."""
+def tolerance_for(target: float) -> float:
+    """How far from the target a price may be and still count as a match."""
+    return max(2.0, 0.5 * target)
+
+
+def buy_price(q: Quote) -> tuple[float, str]:
+    """Price a buyer would face: last trade if any today, else the best ask."""
+    if q.ltp > 0:
+        return q.ltp, "LTP"
+    if q.ask and q.ask > 0:
+        return q.ask, "ask (no trades today)"
+    return 0.0, "none"
+
+
+@dataclass
+class Wing:
+    quote: Quote
+    price: float
+    basis: str          # "LTP" or "ask (no trades today)"
+    matched: bool       # price within tolerance of target
+    # how far out this side of the chain goes, for explaining a non-match
+    farthest_listed: float | None
+    farthest_traded: float | None
+    farthest_quoted: float | None
+
+
+def pick_wing(chain: Chain, opt_type: str, target: float,
+              tolerance: float | None = None) -> Wing:
+    """OTM leg whose buy price is nearest target (ties -> higher OI).
+
+    Always returns the nearest strike, with `matched` saying whether it is
+    actually close to the target -- callers must not present an unmatched
+    wing as a pick.
+    """
+    tol = tolerance_for(target) if tolerance is None else tolerance
     if opt_type == "CE":
-        cands = [q for q in chain.quotes if q.opt_type == "CE" and q.strike > chain.spot]
+        otm = [q for q in chain.quotes if q.opt_type == "CE" and q.strike > chain.spot]
+        far = max
     else:
-        cands = [q for q in chain.quotes if q.opt_type == "PE" and q.strike < chain.spot]
-    cands = [q for q in cands if q.ltp > 0]
-    if not cands:
-        raise ChainError(f"No OTM {opt_type} strikes with a traded price (LTP > 0).")
-    return min(cands, key=lambda q: (abs(q.ltp - target), -(q.oi or 0)))
+        otm = [q for q in chain.quotes if q.opt_type == "PE" and q.strike < chain.spot]
+        far = min
+    priced = [(q, *buy_price(q)) for q in otm]
+    priced = [t for t in priced if t[1] > 0]
+    if not priced:
+        raise ChainError(f"No OTM {opt_type} strikes with a trade or a seller quoting.")
+    q, px, basis = min(priced, key=lambda t: (abs(t[1] - target), t[2] != "LTP", -(t[0].oi or 0)))
+    strikes = lambda qs: far([x.strike for x in qs]) if qs else None
+    return Wing(
+        quote=q, price=px, basis=basis, matched=abs(px - target) <= tol,
+        farthest_listed=strikes(otm),
+        farthest_traded=strikes([x for x in otm if x.ltp > 0]),
+        farthest_quoted=strikes([x for x in otm if x.ask and x.ask > 0]),
+    )
 
 
 @dataclass
 class Report:
-    call: Quote
-    put: Quote
+    call_wing: Wing
+    put_wing: Wing
     spot: float
     pair_premium: float
     lot_size: int
     premium_cost: float
     charges: float
     total_cost: float
+
+    @property
+    def call(self) -> Quote:
+        return self.call_wing.quote
+
+    @property
+    def put(self) -> Quote:
+        return self.put_wing.quote
+
+    @property
+    def matched(self) -> bool:
+        return self.call_wing.matched and self.put_wing.matched
 
     @property
     def call_be(self) -> float:
@@ -311,14 +366,33 @@ class Report:
 
 
 def build_report(chain: Chain, target: float, lot_size: int,
-                 charges_flat: float, charges_pct: float) -> Report:
-    call = pick_wing(chain, "CE", target)
-    put = pick_wing(chain, "PE", target)
-    pair = call.ltp + put.ltp
+                 charges_flat: float, charges_pct: float,
+                 tolerance: float | None = None) -> Report:
+    cw = pick_wing(chain, "CE", target, tolerance)
+    pw = pick_wing(chain, "PE", target, tolerance)
+    pair = cw.price + pw.price
     premium_cost = pair * lot_size
     charges = charges_flat + premium_cost * charges_pct / 100.0
-    return Report(call, put, chain.spot, pair, lot_size,
+    return Report(cw, pw, chain.spot, pair, lot_size,
                   premium_cost, charges, premium_cost + charges)
+
+
+def no_match_reason(w: Wing, target: float) -> str:
+    """Plain-English explanation of why no strike is near the target."""
+    side = "call" if w.quote.opt_type == "CE" else "put"
+    q = w.quote
+    msg = (f"No {side} near Rs {target:g}. Closest is {q.strike:,.0f} at Rs {w.price:.2f} "
+           f"({w.basis}).")
+    if w.price > target:
+        reach = [x for x in (w.farthest_traded, w.farthest_quoted) if x]
+        if reach:
+            edge = max(reach) if q.opt_type == "CE" else min(reach)
+            if w.farthest_listed is not None and w.farthest_listed != edge:
+                msg += (f" Strikes are listed out to {w.farthest_listed:,.0f}, but nothing beyond "
+                        f"{edge:,.0f} has traded or has a seller today.")
+            else:
+                msg += f" No strikes are listed beyond {edge:,.0f} for this expiry."
+    return msg
 
 
 # --------------------------------------------------------------------------- #
@@ -335,15 +409,18 @@ def pct(a: float, b: float) -> float:
 def wing_warnings(rep: "Report", target: float) -> list[str]:
     """Liquidity / staleness flags for the selected wings."""
     warns: list[str] = []
+    for w in (rep.call_wing, rep.put_wing):
+        if not w.matched:
+            warns.append(no_match_reason(w, target))
     for q in (rep.call, rep.put):
+        if not q.ask:
+            warns.append(f"{q.opt_type} {q.strike:,.0f}: no seller quoting (ask 0) -- you can't buy it at the shown price.")
         if not q.volume:
             warns.append(f"{q.opt_type} {q.strike:,.0f}: zero volume today -- LTP may be stale.")
         if q.bid is not None and q.ask is not None and q.ask > 0 and q.bid > 0:
             spread = (q.ask - q.bid) / q.ask * 100
             if spread > 25:
                 warns.append(f"{q.opt_type} {q.strike:,.0f}: wide bid/ask ({spread:.0f}% of ask).")
-        if abs(q.ltp - target) > max(2.0, 0.5 * target):
-            warns.append(f"{q.opt_type}: nearest LTP {q.ltp:.2f} is far from target {target:g}.")
     return warns
 
 
@@ -358,13 +435,18 @@ def render(chain: Chain, rep: Report, target: float) -> str:
     except ValueError:
         pass
     out.append("=" * 78)
+    if not rep.matched:
+        out.append(f" >>> NO Rs {target:g} STRANGLE AVAILABLE RIGHT NOW. Rows below are the closest")
+        out.append(" >>> strikes for information only -- NOT a Rs {:g} wing and NOT a suggestion.".format(target))
+        out.append("")
 
-    hdr = f"{'Leg':<5}{'Strike':>10}{'LTP':>8}{'Bid':>8}{'Ask':>8}{'IV%':>7}{'OI':>11}{'Vol':>10}"
+    hdr = f"{'Leg':<5}{'Match':>6}{'Strike':>10}{'Price':>8}{'Bid':>8}{'Ask':>8}{'IV%':>7}{'OI':>11}{'Vol':>10}"
     out.append(hdr)
     out.append("-" * len(hdr))
-    for q in (rep.call, rep.put):
+    for w in (rep.call_wing, rep.put_wing):
+        q = w.quote
         out.append(
-            f"{q.opt_type:<5}{q.strike:>10,.0f}{q.ltp:>8.2f}{_f(q.bid):>8}{_f(q.ask):>8}"
+            f"{q.opt_type:<5}{'yes' if w.matched else 'NO':>6}{q.strike:>10,.0f}{w.price:>8.2f}{_f(q.bid):>8}{_f(q.ask):>8}"
             f"{_f(q.iv, 1):>7}{_f(q.oi, 0):>11}{_f(q.volume, 0):>10}"
         )
     out.append("")
@@ -380,7 +462,9 @@ def render(chain: Chain, rep: Report, target: float) -> str:
             f"{be:>12,.0f}{move:>+12,.0f}{pct(be, rep.spot):>+8.2f}%"
         )
     out.append("")
-    out.append(f" Pair premium      : Rs {rep.pair_premium:.2f}  (CE {rep.call.ltp:.2f} + PE {rep.put.ltp:.2f})")
+    if not rep.matched:
+        out.append(" Closest-available pair (NOT a cheap strangle):")
+    out.append(f" Pair premium      : Rs {rep.pair_premium:.2f}  (CE {rep.call_wing.price:.2f} + PE {rep.put_wing.price:.2f})")
     out.append(f" x lot size {rep.lot_size:<6} : Rs {rep.premium_cost:,.2f}")
     out.append(f" + charges (est.)  : Rs {rep.charges:,.2f}")
     out.append(f" = Total per pair  : Rs {rep.total_cost:,.2f}")

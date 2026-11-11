@@ -95,3 +95,48 @@ class TestStrangle(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def chain_from_rows(spot, rows):
+    """rows: list of (strike, opt, ltp, ask, volume)."""
+    by = {}
+    for strike, opt, ltp, ask, vol in rows:
+        by.setdefault(strike, {"strikePrice": strike, "expiryDate": "29-Dec-2026"})[opt] = {
+            "lastPrice": ltp, "askPrice": ask, "bidprice": ltp, "totalTradedVolume": vol,
+            "openInterest": 100, "impliedVolatility": 20, "underlyingValue": spot}
+    return {"records": {"underlyingValue": spot, "timestamp": "t", "data": list(by.values())}}
+
+
+class TestNoMatch(unittest.TestCase):
+    """Reproduces the first live scan: nothing near Rs 8 trades for Dec."""
+
+    def setUp(self):
+        self.data = chain_from_rows(60858, [
+            (64000, "CE", 300, 302, 9000), (67000, "CE", 139, 141.9, 4900),
+            (68000, "CE", 0, 0, 0), (70000, "CE", 0, 0, 0),
+            (55000, "PE", 180, 182, 3000), (49500, "PE", 24.15, 0, 13),
+        ])
+
+    def test_reports_no_match_instead_of_a_pick(self):
+        chain = bs.parse_chain(self.data, "29-Dec-2026", "t")
+        rep = bs.build_report(chain, 8, 30, 40, 2)
+        self.assertFalse(rep.call_wing.matched)
+        self.assertFalse(rep.put_wing.matched)
+        self.assertFalse(rep.matched)
+        self.assertEqual(rep.call_wing.farthest_traded, 67000)
+        self.assertEqual(rep.call_wing.farthest_listed, 70000)
+        warns = " ".join(bs.wing_warnings(rep, 8))
+        self.assertIn("No call near Rs 8", warns)
+        self.assertIn("no seller quoting", warns)
+        text = bs.render(chain, rep, 8)
+        self.assertIn("NO Rs 8 STRANGLE AVAILABLE", text)
+
+    def test_quote_only_strike_counts_at_ask(self):
+        self.data["records"]["data"].append({"strikePrice": 72000, "expiryDate": "29-Dec-2026",
+            "CE": {"lastPrice": 0, "askPrice": 8.5, "bidprice": 6, "totalTradedVolume": 0, "underlyingValue": 60858}})
+        chain = bs.parse_chain(self.data, "29-Dec-2026", "t")
+        w = bs.pick_wing(chain, "CE", 8)
+        self.assertTrue(w.matched)
+        self.assertEqual(w.quote.strike, 72000)
+        self.assertEqual(w.price, 8.5)
+        self.assertTrue(w.basis.startswith("ask"))
