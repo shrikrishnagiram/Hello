@@ -7,6 +7,29 @@ how far each wing is from spot, the breakevens, and the cost of one lot of the p
 > It does not place orders. Every figure is a live snapshot, so check it in your broker
 > before you trade.
 
+## The app (recommended)
+A local web app that shows the same scan visually: wing cards, the cost of a pair, a chart
+of premium by strike, the catalyst calendar with countdowns, the full option chain, and a
+scan history.
+
+```bash
+pip install -r requirements.txt
+python app.py            # live NSE data → opens http://127.0.0.1:8050
+python app.py --demo     # synthetic data: try the UI any time (clearly badged DEMO)
+```
+
+- **Run it on your own computer.** NSE blocks most cloud servers.
+- **Auto-refresh:** off, 1, 5 or 15 min. NSE is called at most once every 20 s per expiry.
+- **"Log scan to history"** appends each scan to `data/scan_log.csv`, so you can watch
+  pair premium and IV going into a catalyst like 4 Dec RBI.
+- **"Download chain CSV"** saves the full chain from the latest scan.
+- It listens only on `127.0.0.1`. Use `--host 0.0.0.0` only if you want to open it from
+  your phone on the same Wi-Fi.
+- On an error (NSE down, missing expiry, no spot price) it shows a red banner and no
+  numbers.
+
+## Command-line script
+
 ## Setup
 ```bash
 pip install -r requirements.txt      # optional: pip install nsepython

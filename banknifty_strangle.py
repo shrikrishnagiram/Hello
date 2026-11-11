@@ -332,6 +332,21 @@ def pct(a: float, b: float) -> float:
     return (a - b) / b * 100.0
 
 
+def wing_warnings(rep: "Report", target: float) -> list[str]:
+    """Liquidity / staleness flags for the selected wings."""
+    warns: list[str] = []
+    for q in (rep.call, rep.put):
+        if not q.volume:
+            warns.append(f"{q.opt_type} {q.strike:,.0f}: zero volume today -- LTP may be stale.")
+        if q.bid is not None and q.ask is not None and q.ask > 0 and q.bid > 0:
+            spread = (q.ask - q.bid) / q.ask * 100
+            if spread > 25:
+                warns.append(f"{q.opt_type} {q.strike:,.0f}: wide bid/ask ({spread:.0f}% of ask).")
+        if abs(q.ltp - target) > max(2.0, 0.5 * target):
+            warns.append(f"{q.opt_type}: nearest LTP {q.ltp:.2f} is far from target {target:g}.")
+    return warns
+
+
 def render(chain: Chain, rep: Report, target: float) -> str:
     out = []
     out.append("=" * 78)
@@ -371,16 +386,7 @@ def render(chain: Chain, rep: Report, target: float) -> str:
     out.append(f" = Total per pair  : Rs {rep.total_cost:,.2f}")
     out.append("")
 
-    warns = []
-    for q in (rep.call, rep.put):
-        if not q.volume:
-            warns.append(f"{q.opt_type} {q.strike:,.0f}: zero volume today -- LTP may be stale.")
-        if q.bid is not None and q.ask is not None and q.ask > 0 and q.bid > 0:
-            spread = (q.ask - q.bid) / q.ask * 100
-            if spread > 25:
-                warns.append(f"{q.opt_type} {q.strike:,.0f}: wide bid/ask ({spread:.0f}% of ask).")
-        if abs(q.ltp - target) > max(2.0, 0.5 * target):
-            warns.append(f"{q.opt_type}: nearest LTP {q.ltp:.2f} is far from target {target:g}.")
+    warns = wing_warnings(rep, target)
     if warns:
         out.append(" WARNINGS:")
         out.extend(f"  ! {w}" for w in warns)
