@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Strangle Scanner</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<meta name="theme-color" content="#111110">
+<meta name="mobile-web-app-capable" content="yes">
 <style>
 :root {
   color-scheme: light;
@@ -69,6 +74,21 @@ input[type=date] { width: 150px; }
 button { cursor: pointer; font-weight: 600; }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; padding: 7px 18px; }
 button:disabled { opacity: .55; cursor: wait; }
+.more { flex-basis: 100%; }
+.more summary { color: var(--text-2); font-size: 13px; font-weight: 600; padding: 2px 0; }
+.more-body { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-top: 10px; }
+@media (max-width: 600px) {
+  .wrap { padding: 12px 12px 40px; }
+  h1 { font-size: 17px; }
+  .theme-btn { padding: 4px 10px; min-height: 30px; font-size: 12px; }
+  .controls { gap: 10px; margin: 12px 0; padding: 12px; }
+  .controls > label { flex: 1 1 40%; }
+  .controls > label input { width: 100%; }
+  #scanBtn { flex: 1 1 100%; min-height: 48px; font-size: 16px; }
+  .wing-strike { font-size: 26px; }
+  .status { font-size: 12px; gap: 2px 14px; }
+}
+input, select { font-size: 16px; } /* stops Android/iOS zoom-on-focus */
 .check { flex-direction: row !important; align-items: center; gap: 6px !important; min-height: 36px; }
 .status { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-bottom: 12px; color: var(--text-2); font-size: 13px; }
 .status b { color: var(--text); font-weight: 600; }
@@ -144,7 +164,11 @@ summary { cursor: pointer; font-weight: 600; color: var(--text-2); padding: 4px 
 
   <form class="controls card" id="form">
     <label>Expiry <input type="date" id="expiry" required></label>
-    <label>Target ₹/leg <input type="number" id="target" step="0.5" min="0.05" required></label>
+    <label>Target ₹/leg <input type="number" id="target" step="0.5" min="0.05" inputmode="decimal" required></label>
+    <button class="primary" type="submit" id="scanBtn">Scan</button>
+    <details class="more" id="more">
+    <summary>Settings</summary>
+    <div class="more-body">
     <label>Lot size <input type="number" id="lot" step="1" min="1" required></label>
     <label>Charges ₹ flat <input type="number" id="cflat" step="1" min="0"></label>
     <label>Charges % <input type="number" id="cpct" step="0.5" min="0"></label>
@@ -155,8 +179,9 @@ summary { cursor: pointer; font-weight: 600; color: var(--text-2); padding: 4px 
       <select id="auto"><option value="0">Off</option><option value="60">1 min</option><option value="300">5 min</option><option value="900">15 min</option></select>
     </label>
     <label class="check"><input type="checkbox" id="log" checked> Log scan to history</label>
-    <button class="primary" type="submit" id="scanBtn">Scan</button>
     <button type="button" id="csvBtn" disabled>Download chain CSV</button>
+    </div>
+    </details>
   </form>
 
   <div id="err" class="banner err" hidden></div>
@@ -227,8 +252,14 @@ $("themeBtn").onclick = () => {
 };
 
 // ---------- config & form ----------
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 async function init() {
-  cfg = await (await fetch("/api/config")).json();
+  try { cfg = await (await fetch("/api/config")).json(); }
+  catch (e) {
+    $("err").hidden = false;
+    $("err").textContent = "The scanner isn't running on this phone.\nOpen Termux and type:  scanner   (or tap the Strangle Scanner widget), then reopen this app.";
+    return;
+  }
   $("demoBadge").hidden = !cfg.demo;
   const saved = (() => { try { return JSON.parse(localStorage.getItem("form") || "{}"); } catch (e) { return {}; } })();
   $("expiry").value = saved.expiry || cfg.expiry;
@@ -272,7 +303,9 @@ async function scan(force) {
     if ($("log").checked) loadHistory();
   } catch (e) {
     $("err").hidden = false;
-    $("err").textContent = "Couldn't load data — no numbers shown rather than possibly-wrong ones.\n" + e.message;
+    $("err").textContent = e instanceof TypeError
+      ? "The scanner isn't running on this phone.\nOpen Termux and type:  scanner   (or tap the Strangle Scanner widget), then press Scan again."
+      : "Couldn't load data — no numbers shown rather than possibly-wrong ones.\n" + e.message;
   } finally {
     busy = false;
     $("scanBtn").disabled = false;

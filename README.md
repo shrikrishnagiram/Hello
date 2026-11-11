@@ -7,6 +7,9 @@ how far each wing is from spot, the breakevens, and the cost of one lot of the p
 > It does not place orders. Every figure is a live snapshot, so check it in your broker
 > before you trade.
 
+## On an Android phone
+See **[PHONE_SETUP.md](PHONE_SETUP.md)**: runs on the phone through Termux and installs as a home-screen app.
+
 ## The app (recommended)
 A local web app that shows the same scan visually: wing cards, the cost of a pair, a chart
 of premium by strike, the catalyst calendar with countdowns, the full option chain, and a

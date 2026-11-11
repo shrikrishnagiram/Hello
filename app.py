@@ -31,6 +31,14 @@ from demo_chain import demo_chain
 
 ROOT = Path(__file__).resolve().parent
 INDEX_HTML = ROOT / "static" / "index.html"
+# Files that make the page installable as a phone app (PWA).
+STATIC_FILES = {
+    "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
+    "/sw.js": ("sw.js", "text/javascript"),
+    "/icon-192.png": ("icon-192.png", "image/png"),
+    "/icon-512.png": ("icon-512.png", "image/png"),
+    "/icon.svg": ("icon.svg", "image/svg+xml"),
+}
 LOG_FIELDS = ["fetched_at", "nse_timestamp", "source", "expiry", "spot",
               "ce_strike", "ce_ltp", "ce_iv", "pe_strike", "pe_ltp", "pe_iv",
               "pair_premium", "total_cost"]
@@ -200,6 +208,10 @@ def make_handler(state: State):
             q = parse_qs(u.query)
             if u.path in ("/", "/index.html"):
                 self._send(200, INDEX_HTML.read_bytes(), "text/html; charset=utf-8")
+            elif u.path in STATIC_FILES:
+                name, ctype = STATIC_FILES[u.path]
+                extra = {"Service-Worker-Allowed": "/"} if name == "sw.js" else None
+                self._send(200, (ROOT / "static" / name).read_bytes(), ctype, extra)
             elif u.path == "/api/config":
                 self._json({
                     "demo": state.demo, "expiry": bs.DEFAULT_EXPIRY, "target": bs.DEFAULT_TARGET,
@@ -230,6 +242,13 @@ def make_handler(state: State):
     return Handler
 
 
+def _try_open(url: str) -> None:
+    try:
+        webbrowser.open(url)
+    except Exception:
+        pass
+
+
 def main():
     ap = argparse.ArgumentParser(description="Bank Nifty cheap-strangle scanner (local web app, read-only).")
     ap.add_argument("--demo", action="store_true", help="use synthetic data (no NSE calls)")
@@ -245,7 +264,7 @@ def main():
     print(f"Bank Nifty strangle scanner running at {url}  ({'DEMO data' if args.demo else 'live NSE'})")
     print("Read-only. Ctrl+C to stop.")
     if not args.no_browser:
-        threading.Timer(0.8, lambda: webbrowser.open(url)).start()
+        threading.Timer(0.8, lambda: _try_open(url)).start()
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
