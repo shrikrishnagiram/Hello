@@ -44,6 +44,7 @@ NSE_HOME = "https://www.nseindia.com"
 NSE_PRIMER = "https://www.nseindia.com/option-chain"
 NSE_V3_URL = "https://www.nseindia.com/api/option-chain-v3"
 NSE_LEGACY_URL = "https://www.nseindia.com/api/option-chain-indices"
+NSE_INFO_URL = "https://www.nseindia.com/api/option-chain-contract-info"
 
 HEADERS = {
     "User-Agent": (
@@ -217,6 +218,65 @@ def fetch(source: str, expiry_nse: str) -> tuple[dict, str]:
 # --------------------------------------------------------------------------- #
 # Parsing
 # --------------------------------------------------------------------------- #
+def _sorted_expiries(exps, today=None) -> list[str]:
+    today = today or datetime.now().date()
+    out = []
+    for e in exps or []:
+        try:
+            d = datetime.strptime(to_nse_expiry(e), "%d-%b-%Y").date()
+        except ChainError:
+            continue
+        if d >= today:
+            out.append((d, to_nse_expiry(e)))
+    return [e for _, e in sorted(set(out))]
+
+
+def fetch_all_expiries(source: str = "auto", max_expiries: int = 4) -> list[tuple[str, dict, str]]:
+    """Fetch the nearest `max_expiries` expiries. Returns [(expiry, json, source)].
+
+    Order: NSE contract-info + v3 per expiry -> NSE legacy (all expiries in one call)
+    -> nsepython. Partial results are returned if at least one expiry loads.
+    """
+    errors = []
+    if source in ("auto", "nse"):
+        session = _nse_session()
+        try:
+            info = _get_json(session, NSE_INFO_URL, {"symbol": SYMBOL})
+            exps = _sorted_expiries(info.get("expiryDates"))[:max_expiries]
+            if not exps:
+                raise ChainError("contract-info returned no upcoming expiries")
+            out = []
+            for e in exps:
+                try:
+                    data = _get_json(session, NSE_V3_URL, {"type": "Indices", "symbol": SYMBOL, "expiry": e})
+                    out.append((e, data, "nse-v3"))
+                except ChainError as ex:
+                    errors.append(f"{e}: {ex}")
+                time.sleep(0.6)  # be polite to NSE
+            if out:
+                return out
+        except ChainError as ex:
+            errors.append(str(ex))
+        try:
+            data = _get_json(session, NSE_LEGACY_URL, {"symbol": SYMBOL})
+            exps = _sorted_expiries((data.get("records") or {}).get("expiryDates"))[:max_expiries]
+            if exps:
+                return [(e, data, "nse-legacy") for e in exps]
+            errors.append("legacy endpoint returned no expiries")
+        except ChainError as ex:
+            errors.append(str(ex))
+    if source in ("auto", "nsepython"):
+        try:
+            data, src = fetch_nsepython()
+            exps = _sorted_expiries((data.get("records") or {}).get("expiryDates"))[:max_expiries]
+            if exps:
+                return [(e, data, src) for e in exps]
+            errors.append("nsepython returned no expiries")
+        except ChainError as ex:
+            errors.append(str(ex))
+    raise ChainError("Could not fetch option chains:\n  - " + "\n  - ".join(errors))
+
+
 def parse_chain(data: dict, expiry_nse: str, source: str) -> Chain:
     """Parse NSE option-chain JSON (v3 or legacy shape) for a single expiry."""
     records = data.get("records") or {}

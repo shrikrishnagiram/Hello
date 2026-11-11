@@ -10,6 +10,24 @@ how far each wing is from spot, the breakevens, and the cost of one lot of the p
 ## On an Android phone
 See **[PHONE_SETUP.md](PHONE_SETUP.md)**: runs on the phone through Termux and installs as a home-screen app.
 
+## How the planner decides (strategy.py)
+- **Every listed expiry** is scanned (nearest 4). Expiries with < 7 days left are skipped.
+- **Reachable strikes only:** each strike's distance is measured in the market's own
+  expected-move units, σ = at-the-money IV × √(days/365). Only strikes **0.75σ–2σ** from
+  spot are allowed. Closer is an expensive near-the-money strangle; farther is an
+  unrealistic lottery ticket (e.g. a −18.7% put with 48 days left ≈ 3σ → rejected).
+- **Tradeable only:** two-sided quote, spread ≤ 15%, open interest ≥ 500, traded today.
+  Prices use the **ask** (what you'd pay).
+- **Combinations:** every allowed call × put in the same expiry, roughly balanced in σ.
+  They're grouped **Near / Mid / Far** and ranked by what the pair is worth after a ±5%
+  move within a week (in the weaker direction). Each proposal also shows ±3% and ±8%,
+  breakevens, the market-implied chance of touching a breakeven, and daily decay.
+- **Plan:** for each catalyst, enter in the week before it, use an expiry at least 2
+  weeks after it, exit 2 trading days after the event if nothing moved, never hold the
+  last week, and take profit at 3× / 5×. Expiries that don't cover a catalyst are marked
+  "no catalyst".
+- Probabilities are **market-implied** (what the chain prices), not forecasts.
+
 ## The app (recommended)
 A local web app that shows the same scan visually: wing cards, the cost of a pair, a chart
 of premium by strike, the catalyst calendar with countdowns, the full option chain, and a

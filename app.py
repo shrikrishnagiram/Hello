@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 """
-Bank Nifty Cheap-Strangle Scanner -- local web app (READ-ONLY).
+Bank Nifty Strangle Planner -- local web app (READ-ONLY).
 
-Run it on your own computer (NSE blocks most cloud servers):
+Scans every listed Bank Nifty expiry, rejects unrealistic / untradeable strikes,
+proposes call+put combinations (near / mid / far) and lays out a catalyst plan:
+when to enter, which expiry, when to exit.
 
     python app.py            # live NSE data, opens http://127.0.0.1:8050
     python app.py --demo     # synthetic data, to try the UI any time
 
 No order-placement code exists here. Data fetch and display only.
-Uses only the Python standard library + `requests` (already required by the scanner).
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
-import io
 import json
 import threading
 import time
@@ -27,122 +27,130 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import banknifty_strangle as bs
-from demo_chain import demo_chain
+import strategy as st
+from demo_chain import demo_all
 
 ROOT = Path(__file__).resolve().parent
 INDEX_HTML = ROOT / "static" / "index.html"
-# Files that make the page installable as a phone app (PWA).
-STATIC_FILES = {
+STATIC_FILES = {  # files that make the page installable as a phone app (PWA)
     "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
     "/sw.js": ("sw.js", "text/javascript"),
     "/icon-192.png": ("icon-192.png", "image/png"),
     "/icon-512.png": ("icon-512.png", "image/png"),
     "/icon.svg": ("icon.svg", "image/svg+xml"),
 }
-LOG_FIELDS = ["fetched_at", "nse_timestamp", "source", "expiry", "spot", "target", "matched",
-              "ce_strike", "ce_price", "ce_iv", "pe_strike", "pe_price", "pe_iv",
-              "pair_premium", "total_cost"]
-
-# Catalyst calendar from the project brief -- dates must be re-verified.
-CATALYSTS = [
-    {"date": "2026-12-04", "name": "RBI MPC decision", "note": "Meeting 2-4 Dec. Oct hike to 5.50%, 'calibrated tightening'. Next clean setup."},
-    {"date": "2026-12-16", "name": "US Fed FOMC (approx.)", "note": "Mid-Dec. Confirm exact date."},
-    {"date": "2026-12-29", "name": "Dec monthly expiry", "note": "Last Tuesday."},
-    {"date": "2027-01-12", "name": "Q3 bank earnings begin (approx.)", "note": "HDFC, ICICI, SBI, Axis, Kotak through mid/late Jan."},
-    {"date": "2027-01-25", "name": "Jan monthly expiry", "note": "Last Tuesday -- verify."},
-    {"date": "2027-02-01", "name": "Union Budget", "note": "Sunday; reaction lands next trading session."},
-    {"date": "2027-02-05", "name": "RBI MPC decision", "note": "Back-to-back with Budget."},
-]
-
-CACHE_SECONDS = 20  # don't hit NSE more often than this per expiry
+LOG_FIELDS = ["fetched_at", "nse_timestamp", "source", "expiry", "dte", "spot", "atm_iv",
+              "one_sigma_pct", "near_cost", "mid_cost", "far_cost"]
+CACHE_SECONDS = 60     # NSE is fetched at most once a minute
+MAX_EXPIRIES = 4
 
 
 class State:
-    def __init__(self, demo: bool, out_dir: Path):
+    def __init__(self, demo: bool, out_dir: Path, replay: dict | None = None):
         self.demo = demo
         self.out_dir = out_dir
+        self.replay = replay
         self.lock = threading.Lock()
-        self.raw_cache: dict[tuple, tuple[float, dict, str]] = {}
-        self.last_chain: bs.Chain | None = None
+        self.cache: tuple[float, list, str] | None = None
 
-    def get_raw(self, expiry_nse: str, source: str, force: bool) -> tuple[dict, str]:
-        if getattr(self, "replay", None):
-            return self.replay, "replay file (NOT live data)"
+    def get_all(self, source: str, force: bool) -> list[tuple[str, dict, str]]:
+        if self.replay is not None:
+            rec = self.replay.get("records") or {}
+            exps = rec.get("expiryDates") or sorted(
+                {r.get("expiryDate") or r.get("expiryDates") for r in rec.get("data", [])} - {None})
+            return [(e, self.replay, "replay file (NOT live data)") for e in exps]
         if self.demo:
-            return demo_chain(expiry_nse), "demo (synthetic -- NOT market data)"
-        key = (expiry_nse, source)
+            return demo_all(MAX_EXPIRIES)
         with self.lock:
-            hit = self.raw_cache.get(key)
-            if hit and not force and time.time() - hit[0] < CACHE_SECONDS:
-                return hit[1], hit[2] + " (cached)"
-        data, src = bs.fetch(source, expiry_nse)
+            if self.cache and not force and self.cache[2] == source and time.time() - self.cache[0] < CACHE_SECONDS:
+                return [(e, d, s + " (cached)") for e, d, s in self.cache[1]]
+        res = bs.fetch_all_expiries(source, MAX_EXPIRIES)
         with self.lock:
-            self.raw_cache[key] = (time.time(), data, src)
-        return data, src
+            self.cache = (time.time(), res, source)
+        return res
 
 
-def wing_dict(w: bs.Wing, spot: float, be: float, target: float) -> dict:
-    q = w.quote
-    d = asdict(q)
-    d.update(price=w.price, basis=w.basis, matched=w.matched,
-             reason=None if w.matched else bs.no_match_reason(w, target),
-             farthest_listed=w.farthest_listed, farthest_traded=w.farthest_traded,
-             farthest_quoted=w.farthest_quoted,
-             dist=q.strike - spot, dist_pct=bs.pct(q.strike, spot),
-             be=be, move=be - spot, move_pct=bs.pct(be, spot))
-    return d
-
-
-def scan(state: State, params: dict) -> dict:
-    g = lambda k, d: (params.get(k) or [d])[0]
-    expiry_nse = bs.to_nse_expiry(g("expiry", bs.DEFAULT_EXPIRY))
+def _num(params: dict, key: str, default, cast=float):
+    raw = (params.get(key) or [""])[0]
+    if raw in ("", None):
+        return default
     try:
-        target = float(g("target", bs.DEFAULT_TARGET))
-        lot = int(g("lot", bs.DEFAULT_LOT_SIZE))
-        cflat = float(g("cflat", bs.DEFAULT_CHARGES_FLAT))
-        cpct = float(g("cpct", bs.DEFAULT_CHARGES_PCT))
-    except ValueError as e:
-        raise bs.ChainError(f"Bad numeric input: {e}") from None
-    if target <= 0 or lot <= 0:
-        raise bs.ChainError("Target premium and lot size must be positive.")
-    source = g("source", "auto")
+        return cast(raw)
+    except ValueError:
+        raise bs.ChainError(f"Bad value for {key}: {raw!r}") from None
+
+
+def rules_from(params: dict) -> st.Rules:
+    r = st.Rules()
+    r.lot_size = _num(params, "lot", r.lot_size, int)
+    r.charges_flat = _num(params, "cflat", r.charges_flat)
+    r.charges_pct = _num(params, "cpct", r.charges_pct)
+    r.budget = _num(params, "budget", None) or None
+    r.min_sigma = _num(params, "min_sigma", r.min_sigma)
+    r.max_sigma = _num(params, "max_sigma", r.max_sigma)
+    r.min_oi = _num(params, "min_oi", r.min_oi)
+    if r.lot_size <= 0 or not (0 < r.min_sigma < r.max_sigma <= 4):
+        raise bs.ChainError("Lot size must be positive and 0 < min sigma < max sigma <= 4.")
+    return r
+
+
+def chain_rows(chain: bs.Chain) -> list[dict]:
+    by: dict[float, dict] = {}
+    for q in chain.quotes:
+        row = by.setdefault(q.strike, {"strike": q.strike})
+        p = q.opt_type.lower()
+        row.update({f"{p}_ltp": q.ltp, f"{p}_bid": q.bid, f"{p}_ask": q.ask,
+                    f"{p}_iv": q.iv, f"{p}_oi": q.oi, f"{p}_vol": q.volume})
+    return [by[k] for k in sorted(by)]
+
+
+def propose(state: State, params: dict) -> dict:
+    rules = rules_from(params)
+    source = (params.get("source") or ["auto"])[0]
     if source not in ("auto", "nse", "nsepython"):
         source = "auto"
+    raw = state.get_all(source, force=(params.get("force") or ["0"])[0] == "1")
+    today = datetime.now().date()
 
-    data, src = state.get_raw(expiry_nse, source, force=g("force", "0") == "1")
-    chain = bs.parse_chain(data, expiry_nse, src)
-    rep = bs.build_report(chain, target, lot, cflat, cpct)
-    state.last_chain = chain
+    chains, problems = [], []
+    for e, data, src in raw:
+        try:
+            chains.append(bs.parse_chain(data, e, src))
+        except bs.ChainError as ex:
+            problems.append(f"{e}: {ex}")
+    if not chains:
+        raise bs.ChainError("No expiry could be read.\n" + "\n".join(problems))
 
-    by_strike: dict[float, dict] = {}
-    for q in chain.quotes:
-        r = by_strike.setdefault(q.strike, {"strike": q.strike})
-        p = q.opt_type.lower()
-        r.update({f"{p}_ltp": q.ltp, f"{p}_iv": q.iv, f"{p}_oi": q.oi,
-                  f"{p}_vol": q.volume, f"{p}_bid": q.bid, f"{p}_ask": q.ask})
-
-    try:
-        dte = (datetime.strptime(chain.expiry, "%d-%b-%Y").date() - datetime.now().date()).days
-    except ValueError:
-        dte = None
-
+    plan = st.build_plan([c.expiry for c in chains], today)
+    covers = st.expiry_catalysts(plan)
+    expiries = []
+    for ch in chains:
+        ea = st.analyze_expiry(ch, today, rules)
+        expiries.append({
+            "expiry": ea.expiry, "dte": ea.dte, "atm_iv": ea.atm_iv, "one_sigma_pct": ea.one_sigma_pct,
+            "catalysts": covers.get(ea.expiry, []), "skipped_reason": ea.skipped_reason,
+            "calls_ok": ea.calls_ok, "puts_ok": ea.puts_ok, "n_combos_total": ea.n_combos_total,
+            "excluded": ea.excluded, "excluded_examples": ea.excluded_examples, "zone": ea.zone,
+            "bands": {k: [c.to_dict() for c in v] for k, v in ea.bands.items()},
+            "chain": chain_rows(ch),
+        })
+    first = chains[0]
     result = {
-        "ok": True, "demo": state.demo, "expiry": chain.expiry, "spot": chain.spot,
-        "timestamp": chain.timestamp, "source": chain.source, "dte": dte, "target": target,
-        "fetched_at": datetime.now().isoformat(timespec="seconds"),
-        "call": wing_dict(rep.call_wing, rep.spot, rep.call_be, target),
-        "put": wing_dict(rep.put_wing, rep.spot, rep.put_be, target),
-        "matched": rep.matched, "tolerance": bs.tolerance_for(target),
-        "pair_premium": rep.pair_premium, "lot_size": rep.lot_size,
-        "premium_cost": rep.premium_cost, "charges": rep.charges, "total_cost": rep.total_cost,
-        "warnings": bs.wing_warnings(rep, target),
-        "chain": [by_strike[k] for k in sorted(by_strike)],
+        "ok": True, "demo": state.demo, "spot": first.spot, "timestamp": first.timestamp,
+        "source": first.source, "fetched_at": datetime.now().isoformat(timespec="seconds"),
+        "today": today.isoformat(), "rules": asdict(rules), "plan": plan,
+        "plan_rules": st.PLAN_RULES, "band_notes": st.BAND_NOTES,
+        "bands_def": [{"name": n, "from": lo, "to": hi} for n, lo, hi in st.BANDS],
+        "expiries": expiries, "problems": problems,
     }
-    if g("log", "0") == "1":
+    if (params.get("log") or ["0"])[0] == "1":
         append_log(state, result)
     return result
 
 
+# --------------------------------------------------------------------------- #
+# Scan log (tracks ATM IV and best cost per band over time -> "is vol cheap?")
+# --------------------------------------------------------------------------- #
 def log_path(state: State) -> Path:
     return state.out_dir / ("scan_log_demo.csv" if state.demo else "scan_log.csv")
 
@@ -150,27 +158,33 @@ def log_path(state: State) -> Path:
 def append_log(state: State, r: dict) -> None:
     path = log_path(state)
     path.parent.mkdir(parents=True, exist_ok=True)
-    if path.exists():
-        with path.open(newline="") as fh:
-            header = next(csv.reader(fh), [])
-        if header != LOG_FIELDS:  # older format: keep it, start a fresh file
-            path.rename(path.with_name(f"{path.stem}_old_{datetime.now():%Y%m%d_%H%M%S}.csv"))
-    new = not path.exists()
-    with state.lock, path.open("a", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=LOG_FIELDS)
-        if new:
-            w.writeheader()
-        w.writerow({
-            "fetched_at": r["fetched_at"], "nse_timestamp": r["timestamp"], "source": r["source"],
-            "expiry": r["expiry"], "spot": r["spot"], "target": r["target"],
-            "matched": "yes" if r["matched"] else "no",
-            "ce_strike": r["call"]["strike"], "ce_price": r["call"]["price"], "ce_iv": r["call"]["iv"],
-            "pe_strike": r["put"]["strike"], "pe_price": r["put"]["price"], "pe_iv": r["put"]["iv"],
-            "pair_premium": round(r["pair_premium"], 2), "total_cost": round(r["total_cost"], 2),
-        })
+    with state.lock:
+        if path.exists():
+            with path.open(newline="") as fh:
+                header = next(csv.reader(fh), [])
+            if header != LOG_FIELDS:  # older format: keep it, start a fresh file
+                path.rename(path.with_name(f"{path.stem}_old_{datetime.now():%Y%m%d_%H%M%S}.csv"))
+        new = not path.exists()
+        with path.open("a", newline="") as fh:
+            w = csv.DictWriter(fh, fieldnames=LOG_FIELDS)
+            if new:
+                w.writeheader()
+            for e in r["expiries"]:
+                if e["skipped_reason"]:
+                    continue
+                best = {k: (v[0]["cost"] if v else "") for k, v in e["bands"].items()}
+                w.writerow({
+                    "fetched_at": r["fetched_at"], "nse_timestamp": r["timestamp"], "source": r["source"],
+                    "expiry": e["expiry"], "dte": e["dte"], "spot": r["spot"],
+                    "atm_iv": round(e["atm_iv"] * 100, 2) if e["atm_iv"] else "",
+                    "one_sigma_pct": round(e["one_sigma_pct"], 2) if e["one_sigma_pct"] else "",
+                    "near_cost": round(best["Near"], 0) if best.get("Near") else "",
+                    "mid_cost": round(best["Mid"], 0) if best.get("Mid") else "",
+                    "far_cost": round(best["Far"], 0) if best.get("Far") else "",
+                })
 
 
-def read_log(state: State, limit: int = 200) -> list[dict]:
+def read_log(state: State, limit: int = 300) -> list[dict]:
     path = log_path(state)
     if not path.exists():
         return []
@@ -179,27 +193,12 @@ def read_log(state: State, limit: int = 200) -> list[dict]:
     return rows[-limit:][::-1]
 
 
-def chain_csv(chain: bs.Chain) -> str:
-    buf = io.StringIO()
-    cols = ["ltp", "bid", "ask", "iv", "oi", "volume"]
-    w = csv.writer(buf)
-    w.writerow(["nse_timestamp", "expiry", "spot", "strike"]
-               + [f"ce_{c}" for c in cols] + [f"pe_{c}" for c in cols])
-    by: dict[float, dict] = {}
-    for q in chain.quotes:
-        by.setdefault(q.strike, {})[q.opt_type] = q
-    for k in sorted(by):
-        row = [chain.timestamp, chain.expiry, chain.spot, k]
-        for side in ("CE", "PE"):
-            q = by[k].get(side)
-            row += [getattr(q, c) if q else "" for c in cols]
-        w.writerow(row)
-    return buf.getvalue()
-
-
+# --------------------------------------------------------------------------- #
+# HTTP
+# --------------------------------------------------------------------------- #
 def make_handler(state: State):
     class Handler(BaseHTTPRequestHandler):
-        def log_message(self, fmt, *args):  # quieter console
+        def log_message(self, fmt, *args):
             if "/api/" in (args[0] if args else ""):
                 return
             super().log_message(fmt, *args)
@@ -224,32 +223,21 @@ def make_handler(state: State):
                 self._send(200, INDEX_HTML.read_bytes(), "text/html; charset=utf-8")
             elif u.path in STATIC_FILES:
                 name, ctype = STATIC_FILES[u.path]
-                extra = {"Service-Worker-Allowed": "/"} if name == "sw.js" else None
-                self._send(200, (ROOT / "static" / name).read_bytes(), ctype, extra)
+                self._send(200, (ROOT / "static" / name).read_bytes(), ctype)
             elif u.path == "/api/config":
-                self._json({
-                    "demo": state.demo, "expiry": bs.DEFAULT_EXPIRY, "target": bs.DEFAULT_TARGET,
-                    "lot": bs.DEFAULT_LOT_SIZE, "cflat": bs.DEFAULT_CHARGES_FLAT,
-                    "cpct": bs.DEFAULT_CHARGES_PCT, "catalysts": CATALYSTS,
-                    "today": datetime.now().date().isoformat(),
-                })
-            elif u.path == "/api/scan":
+                r = st.Rules()
+                self._json({"demo": state.demo, "lot": r.lot_size, "cflat": r.charges_flat,
+                            "cpct": r.charges_pct, "min_sigma": r.min_sigma, "max_sigma": r.max_sigma,
+                            "min_oi": r.min_oi})
+            elif u.path == "/api/proposals":
                 try:
-                    self._json(scan(state, q))
+                    self._json(propose(state, q))
                 except bs.ChainError as e:
                     self._json({"ok": False, "error": str(e)}, 502)
                 except Exception as e:  # never show silent wrong data
                     self._json({"ok": False, "error": f"Unexpected error: {type(e).__name__}: {e}"}, 500)
             elif u.path == "/api/history":
                 self._json({"rows": read_log(state)})
-            elif u.path == "/api/chain.csv":
-                if not state.last_chain:
-                    self._json({"ok": False, "error": "Run a scan first."}, 404)
-                    return
-                c = state.last_chain
-                name = f"banknifty_{c.expiry}_{datetime.now():%Y%m%d_%H%M%S}.csv"
-                self._send(200, chain_csv(c).encode(), "text/csv",
-                           {"Content-Disposition": f'attachment; filename="{name}"'})
             else:
                 self._send(404, b"Not found", "text/plain")
 
@@ -264,20 +252,21 @@ def _try_open(url: str) -> None:
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Bank Nifty cheap-strangle scanner (local web app, read-only).")
+    ap = argparse.ArgumentParser(description="Bank Nifty strangle planner (local web app, read-only).")
     ap.add_argument("--demo", action="store_true", help="use synthetic data (no NSE calls)")
+    ap.add_argument("--replay", type=Path, help="serve a saved NSE JSON file instead of live data")
     ap.add_argument("--host", default="127.0.0.1", help="bind address (default %(default)s; local only)")
     ap.add_argument("--port", type=int, default=8050)
     ap.add_argument("--out-dir", type=Path, default=ROOT / bs.DEFAULT_OUT_DIR)
     ap.add_argument("--no-browser", action="store_true")
-    ap.add_argument("--replay", type=Path, help="serve a saved NSE JSON file instead of live data (testing)")
     args = ap.parse_args()
 
-    state = State(args.demo, args.out_dir)
-    state.replay = json.loads(args.replay.read_text()) if args.replay else None
+    replay = json.loads(args.replay.read_text()) if args.replay else None
+    state = State(args.demo, args.out_dir, replay)
     srv = ThreadingHTTPServer((args.host, args.port), make_handler(state))
     url = f"http://{'127.0.0.1' if args.host in ('0.0.0.0', '') else args.host}:{args.port}"
-    print(f"Bank Nifty strangle scanner running at {url}  ({'DEMO data' if args.demo else 'live NSE'})")
+    mode = "DEMO data" if args.demo else ("REPLAY file" if replay else "live NSE")
+    print(f"Bank Nifty strangle planner running at {url}  ({mode})")
     print("Read-only. Ctrl+C to stop.")
     if not args.no_browser:
         threading.Timer(0.8, lambda: _try_open(url)).start()
