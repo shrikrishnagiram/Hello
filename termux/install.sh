@@ -6,10 +6,14 @@ REPO_URL="https://github.com/shrikrishnagiram/Hello.git"
 BRANCH="${BRANCH:-ccr-e3df3d29-cy21k0}"
 APP_DIR="$HOME/Hello"
 
-echo "==> Installing Python, git and helpers (this can take a few minutes)..."
-yes | pkg update >/dev/null 2>&1 || true
-pkg install -y python git procps termux-tools >/dev/null
-pip install --quiet --disable-pip-version-check requests
+echo "==> Installing Python, git and helpers (this can take 5-10 minutes)..."
+# Never stop to ask about config files: keep the existing ones.
+export DEBIAN_FRONTEND=noninteractive
+APT_OPTS="-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold"
+pkg update -y || true
+apt-get install -y $APT_OPTS python git procps termux-tools
+echo "==> Installing the requests library..."
+pip install --disable-pip-version-check requests
 
 echo "==> Getting the scanner code..."
 if [ -d "$APP_DIR/.git" ]; then
