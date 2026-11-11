@@ -45,15 +45,20 @@ class Rules:
 
 # Catalyst calendar from the project brief. Dates MUST be re-verified.
 CATALYSTS = [
-    {"date": "2026-12-04", "name": "RBI MPC decision",
+    {"date": "2026-12-04", "name": "RBI MPC decision", "plain": "RBI interest-rate decision",
+     "why": "The RBI sets India's interest rates. Banks' profits depend on them, so a surprise can move bank shares sharply. RBI raised rates in October and signalled more could come, so this one is genuinely uncertain.",
      "note": "Meeting 2-4 Dec. Oct hike to 5.50% and 'calibrated tightening' make the outcome genuinely uncertain."},
-    {"date": "2026-12-16", "name": "US Fed FOMC (approx. date)",
+    {"date": "2026-12-16", "name": "US Fed FOMC (approx. date)", "plain": "US Federal Reserve rate decision",
+     "why": "US interest rates move money around the world, including into and out of Indian shares. Exact date to be confirmed.",
      "note": "Mid-Dec; confirm the exact date."},
-    {"date": "2027-01-12", "name": "Q3 bank earnings (approx. start)", "only": ["BANKNIFTY"],
+    {"date": "2027-01-12", "name": "Q3 bank earnings (approx. start)", "plain": "Big banks report their profits", "only": ["BANKNIFTY"],
+     "why": "HDFC, ICICI, SBI, Axis and Kotak report their October-December results over mid-to-late January. Big surprises move Bank Nifty directly.",
      "note": "HDFC, ICICI, SBI, Axis, Kotak report through mid/late Jan; Bank-Nifty-specific."},
-    {"date": "2027-02-01", "name": "Union Budget",
+    {"date": "2027-02-01", "name": "Union Budget", "plain": "Union Budget",
+     "why": "The government's yearly spending and tax plan. It's on a Sunday, so the market reacts on Monday. The RBI decides again 4 days later.",
      "note": "Sunday; the reaction lands next trading session. RBI follows on 5 Feb."},
-    {"date": "2027-02-05", "name": "RBI MPC decision",
+    {"date": "2027-02-05", "name": "RBI MPC decision", "plain": "RBI interest-rate decision",
+     "why": "The next RBI rate decision, right after the Budget.",
      "note": "Back-to-back with the Budget."},
 ]
 
@@ -395,7 +400,9 @@ def build_plan(expiries: list[str], today: date, catalysts=CATALYSTS,
         else:
             status = f"entry in {(entry_from - today).days} days"
         plan.append({
-            "event": ev["name"], "date": d.isoformat(), "note": ev["note"], "status": status,
+            "event": ev["name"], "plain": ev.get("plain", ev["name"]), "why": ev.get("why", ev["note"]),
+            "date": d.isoformat(), "note": ev["note"], "status": status,
+            "reaction_day": reaction.isoformat(),
             "entry_from": entry_from.isoformat(), "entry_to": entry_to.isoformat(),
             "exit_if_no_move": exit_no_move.isoformat(),
             "expiry": use.strftime("%d-%b-%Y") if use else None,

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Strangle Planner</title>
+<title>Big-Move Planner</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/icon-192.png">
@@ -14,8 +14,8 @@
   color-scheme: light;
   --bg: #f4f4f2; --surface: #fcfcfb; --surface-2: #efeeeb; --border: #dddcd7;
   --text: #0b0b0b; --text-2: #52514e; --text-3: #7a7974; --grid: #e6e5e1;
-  --call: #2a78d6; --put: #eb6834; --accent: #2a78d6;
-  --zone: rgba(42,120,214,.07);
+  --call: #2a78d6; --put: #eb6834; --accent: #2a78d6; --zone: rgba(42,120,214,.07);
+  --good: #008300; --good-fill: rgba(0,131,0,.14); --bad: #c93b3a; --bad-fill: rgba(227,73,72,.13);
   --warn-bg: #fff4dc; --warn-text: #6b4a00; --warn-border: #eda100;
   --err-bg: #fde8e8; --err-text: #8a1c1c; --err-border: #e34948;
   --ok-bg: #e7f5e7; --ok-text: #135c13; --ok-border: #008300;
@@ -27,6 +27,7 @@
     --bg: #111110; --surface: #1a1a19; --surface-2: #232321; --border: #33332f;
     --text: #f0efec; --text-2: #c3c2b7; --text-3: #8e8d86; --grid: #2a2a27;
     --call: #3987e5; --put: #d95926; --accent: #3987e5; --zone: rgba(57,135,229,.10);
+    --good: #3fae3f; --good-fill: rgba(63,174,63,.18); --bad: #e66767; --bad-fill: rgba(230,103,103,.16);
     --warn-bg: #2e2510; --warn-text: #f3cf7a; --warn-border: #c98500;
     --err-bg: #2f1616; --err-text: #f4a9a9; --err-border: #e66767;
     --ok-bg: #142814; --ok-text: #9fe09f; --ok-border: #3fae3f;
@@ -38,100 +39,139 @@
   --bg: #111110; --surface: #1a1a19; --surface-2: #232321; --border: #33332f;
   --text: #f0efec; --text-2: #c3c2b7; --text-3: #8e8d86; --grid: #2a2a27;
   --call: #3987e5; --put: #d95926; --accent: #3987e5; --zone: rgba(57,135,229,.10);
+  --good: #3fae3f; --good-fill: rgba(63,174,63,.18); --bad: #e66767; --bad-fill: rgba(230,103,103,.16);
   --warn-bg: #2e2510; --warn-text: #f3cf7a; --warn-border: #c98500;
   --err-bg: #2f1616; --err-text: #f4a9a9; --err-border: #e66767;
   --ok-bg: #142814; --ok-text: #9fe09f; --ok-border: #3fae3f;
   --demo-bg: #24203f; --demo-text: #c3bcf5;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { margin: 0; background: var(--bg); color: var(--text);
-  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-variant-numeric: tabular-nums; }
-.wrap { max-width: 1100px; margin: 0 auto; padding: 20px 16px 48px; }
-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-variant-numeric: tabular-nums; }
+.wrap { max-width: 860px; margin: 0 auto; padding: 16px 14px 60px; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
-h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-2); margin: 0 0 12px; font-weight: 600; }
+h2 { font-size: 18px; margin: 0 0 4px; letter-spacing: -0.01em; }
 h3 { font-size: 16px; margin: 0; }
-.sub { color: var(--text-2); font-size: 13px; margin-top: 4px; }
+.kicker { font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--text-3); font-weight: 700; margin-bottom: 4px; }
+.lead { color: var(--text-2); margin: 0 0 12px; }
 .badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 99px; background: var(--demo-bg); color: var(--demo-text); }
 .ro { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--border); color: var(--text-2); }
-.theme-btn { margin-left: auto; }
-.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
-section { margin-top: 16px; }
-.controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin: 16px 0 12px; }
-.controls label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-2); }
+.hbtns { margin-left: auto; display: flex; gap: 6px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px; }
+section { margin-top: 14px; }
 input, select, button { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border);
-  border-radius: 8px; padding: 7px 10px; min-height: 38px; }
+  border-radius: 10px; padding: 8px 12px; min-height: 42px; }
 input, select { font-size: 16px; }
-input[type=number] { width: 110px; }
 button { cursor: pointer; font-weight: 600; }
-button.primary { background: var(--accent); border-color: var(--accent); color: #fff; padding: 7px 22px; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.small { min-height: 32px; padding: 4px 10px; font-size: 13px; }
 button:disabled { opacity: .55; cursor: wait; }
-.more { flex-basis: 100%; }
-.seg { display: flex; flex-basis: 100%; gap: 0; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
-.seg button { flex: 1; border: 0; border-radius: 0; border-left: 1px solid var(--border); background: var(--surface); min-height: 42px; }
-.seg button:first-child { border-left: 0; }
-.seg button[aria-checked="true"] { background: var(--accent); color: #fff; }
-.cmpgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-.cmpcard { border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
-@media (max-width: 900px) { .cmpgrid { grid-template-columns: 1fr; } }
-.more summary { color: var(--text-2); font-size: 13px; font-weight: 600; cursor: pointer; }
-.more-body { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-top: 10px; }
-.check { flex-direction: row !important; align-items: center; gap: 6px !important; min-height: 38px; }
-.status { display: flex; flex-wrap: wrap; gap: 4px 18px; color: var(--text-2); font-size: 13px; }
-.status b { color: var(--text); }
-.banner { border-radius: 10px; padding: 10px 14px; margin: 10px 0; border: 1px solid; }
+.muted { color: var(--text-3); font-size: 13px; }
+.placeholder { color: var(--text-3); padding: 20px 0; text-align: center; }
+.banner { border-radius: 12px; padding: 12px 14px; margin: 10px 0; border: 1px solid; }
 .banner.err { background: var(--err-bg); color: var(--err-text); border-color: var(--err-border); white-space: pre-wrap; }
 .banner.warn { background: var(--warn-bg); color: var(--warn-text); border-color: var(--warn-border); }
 .banner.ok { background: var(--ok-bg); color: var(--ok-text); border-color: var(--ok-border); }
-.muted { color: var(--text-3); font-size: 12px; }
-.placeholder { color: var(--text-3); padding: 24px 0; text-align: center; }
-.chip { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--border); color: var(--text-2); white-space: nowrap; }
-.chip.open { background: var(--ok-bg); color: var(--ok-text); border-color: var(--ok-border); }
-.chip.soon { background: var(--surface-2); }
-.chip.past { opacity: .6; }
-/* plan */
-.step { border-top: 1px solid var(--border); padding: 14px 0; }
-.step:first-child { border-top: 0; padding-top: 4px; }
-details.step > summary { list-style: none; }
-details.step > summary::-webkit-details-marker { display: none; }
-details.step > summary::before { content: "▸"; color: var(--text-3); margin-right: 2px; }
-details.step[open] > summary::before { content: "▾"; }
-.moreprops { margin-top: 8px; }
-.moreprops > summary { display: inline-block; }
-.step-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
-.step-date { font-weight: 700; color: var(--text-2); min-width: 50px; }
-.step-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 10px 0; }
-.step-grid div { background: var(--surface-2); border-radius: 8px; padding: 8px 10px; font-size: 12px; color: var(--text-2); }
-.step-grid b { display: block; font-size: 14px; color: var(--text); }
-.picks { display: grid; gap: 6px; }
-.pick { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; font-size: 13px; }
-.pick .bn { font-weight: 700; min-width: 40px; }
-.linkbtn { background: none; border: 0; color: var(--accent); padding: 0; min-height: 0; font-weight: 600; cursor: pointer; margin-top: 8px; }
-/* expiries */
-.tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 12px; }
-.tab { flex: 0 0 auto; text-align: left; padding: 8px 12px; border-radius: 10px; min-width: 120px; }
+.chip { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 99px; border: 1px solid var(--border); color: var(--text-2); white-space: nowrap; }
+.chip.go { background: var(--ok-bg); color: var(--ok-text); border-color: var(--ok-border); }
+.chip.wait { background: var(--surface-2); }
+.chip.stop { background: var(--warn-bg); color: var(--warn-text); border-color: var(--warn-border); }
+/* ? term buttons */
+.q { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; min-height: 0; padding: 0;
+  margin-left: 4px; border-radius: 50%; font-size: 12px; font-weight: 700; color: var(--accent); border: 1.5px solid var(--accent);
+  background: transparent; vertical-align: 2px; line-height: 1; }
+/* bottom sheet */
+.sheet-bg { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 50; display: flex; align-items: flex-end; justify-content: center; }
+.sheet { background: var(--surface); width: 100%; max-width: 560px; border-radius: 18px 18px 0 0; padding: 18px 18px 28px; max-height: 80vh; overflow: auto; }
+.sheet h3 { font-size: 18px; margin-bottom: 6px; }
+.sheet p { margin: 6px 0; color: var(--text-2); }
+.sheet .ex { background: var(--surface-2); border-radius: 10px; padding: 10px 12px; margin-top: 10px; font-size: 14px; }
+/* index picker */
+.seg { display: flex; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.seg button { flex: 1; border: 0; border-radius: 0; border-left: 1px solid var(--border); background: var(--surface); min-height: 46px; }
+.seg button:first-child { border-left: 0; }
+.seg button[aria-checked="true"] { background: var(--accent); color: #fff; }
+.about { margin-top: 8px; color: var(--text-2); font-size: 14px; }
+.statusline { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 10px; font-size: 13px; color: var(--text-3); }
+.statusline b { color: var(--text); }
+/* today hero */
+.hero { border-width: 2px; }
+.hero.go { border-color: var(--ok-border); }
+.hero.wait { border-color: var(--border); }
+.hero.stop { border-color: var(--warn-border); }
+.hero-title { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; margin: 2px 0 6px; line-height: 1.2; }
+.hero-sub { color: var(--text-2); }
+.timeline { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 14px; }
+.tl { border-radius: 10px; padding: 8px 10px; background: var(--surface-2); font-size: 12px; color: var(--text-2); position: relative; }
+.tl b { display: block; font-size: 14px; color: var(--text); }
+.tl.now { outline: 2px solid var(--accent); }
+.why { margin-top: 12px; font-size: 14px; color: var(--text-2); }
+/* choices */
+.budget { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin: 6px 0 12px; }
+.budget label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-2); flex: 1 1 200px; }
+.choice { border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin-top: 10px; background: var(--surface); }
+.choice.open { border: 2px solid var(--accent); }
+.choice-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; cursor: pointer; }
+.choice-head .tag { font-size: 12px; color: var(--text-3); }
+.pay { font-size: 26px; font-weight: 800; letter-spacing: -0.02em; margin: 6px 0 0; }
+.pay small { display: block; font-size: 13px; font-weight: 500; color: var(--text-3); letter-spacing: 0; }
+.plain { margin: 8px 0 0; }
+.plain b { white-space: nowrap; }
+.what { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px; }
+.what div { background: var(--surface-2); border-radius: 10px; padding: 8px; text-align: center; font-size: 12px; color: var(--text-2); }
+.what b { display: block; font-size: 16px; color: var(--text); }
+.what .gain { display: block; color: var(--good); font-weight: 700; white-space: nowrap; }
+.facts { margin: 10px 0 0; padding: 0; list-style: none; font-size: 14px; }
+.facts li { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; border-top: 1px solid var(--grid); }
+.facts li span:last-child { font-weight: 700; text-align: right; white-space: nowrap; }
+.more { margin-top: 12px; }
+.payoff-box { position: relative; margin-top: 8px; }
+.readout { font-size: 14px; margin-top: 4px; min-height: 22px; }
+.howto { background: var(--surface-2); border-radius: 12px; padding: 12px; margin-top: 12px; font-size: 14px; }
+.howto ol { margin: 6px 0 0; padding-left: 20px; }
+.howto li { margin: 4px 0; }
+.contract { font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 700; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; white-space: nowrap; }
+.linkbtn { background: none; border: 0; color: var(--accent); padding: 0; min-height: 0; font-weight: 600; cursor: pointer; }
+/* sell plan */
+.steps { list-style: none; padding: 0; margin: 8px 0 0; }
+.steps li { display: grid; grid-template-columns: 34px 1fr; gap: 10px; padding: 10px 0; border-top: 1px solid var(--grid); }
+.steps li:first-child { border-top: 0; }
+.steps .ic { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 16px; background: var(--surface-2); }
+/* events list */
+.ev { display: grid; grid-template-columns: 58px 1fr auto; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--grid); cursor: pointer; }
+.ev:first-child { border-top: 0; }
+.ev.sel .evname { color: var(--accent); }
+.evdate { font-weight: 800; font-size: 15px; line-height: 1.1; }
+.evdate small { display: block; font-weight: 500; font-size: 11px; color: var(--text-3); }
+.evname { font-weight: 700; }
+/* guide */
+.guide .lesson { border-top: 1px solid var(--grid); padding: 14px 0; }
+.guide .lesson:first-of-type { border-top: 0; }
+.guide .lesson h3 { margin-bottom: 4px; }
+.guide .lesson p { margin: 6px 0; color: var(--text-2); }
+.guide .num { display: inline-flex; width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 13px; align-items: center; justify-content: center; margin-right: 6px; vertical-align: 1px; }
+.tickets { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.ticket { border-radius: 10px; padding: 10px; font-size: 13px; border: 2px solid; }
+.ticket.up { border-color: var(--call); }
+.ticket.down { border-color: var(--put); }
+.ticket b { display: block; font-size: 15px; }
+/* advanced */
+details.adv > summary { cursor: pointer; font-weight: 700; font-size: 16px; padding: 4px 0; }
+.advsec { border-top: 1px solid var(--border); margin-top: 14px; padding-top: 14px; }
+.advsec h3 { margin-bottom: 8px; }
+.settings { display: flex; flex-wrap: wrap; gap: 10px; }
+.settings label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-2); flex: 1 1 140px; }
+.check { flex-direction: row !important; align-items: center; gap: 8px !important; }
+.tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 10px; }
+.tab { flex: 0 0 auto; text-align: left; padding: 8px 12px; min-width: 120px; }
 .tab small { display: block; font-weight: 500; color: var(--text-3); font-size: 11px; }
 .tab.sel { border: 2px solid var(--accent); }
-.summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
-.summary div { background: var(--surface-2); border-radius: 8px; padding: 8px 10px; font-size: 12px; color: var(--text-2); }
-.summary b { display: block; font-size: 15px; color: var(--text); }
-.band { margin-top: 18px; }
-.band-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-.band-note { color: var(--text-2); font-size: 13px; margin: 4px 0 10px; }
-.props { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
-.prop { border: 1px solid var(--border); border-radius: 10px; padding: 12px; cursor: pointer; background: var(--surface); }
-.prop.sel { border: 2px solid var(--accent); }
-.prop-legs { font-size: 16px; font-weight: 700; }
-.prop-cost { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; margin: 4px 0 2px; }
-.legrow { display: grid; grid-template-columns: 12px 1fr auto; gap: 6px; align-items: center; font-size: 13px; margin-top: 4px; }
-.sw { width: 10px; height: 10px; border-radius: 3px; }
-.kv { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; margin: 8px 0 0; font-size: 13px; }
-.kv dt { color: var(--text-2); }
-.kv dd { margin: 0; text-align: right; font-weight: 600; }
-.scen { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
-.scen div { background: var(--surface-2); border-radius: 8px; padding: 6px 8px; font-size: 11px; color: var(--text-2); text-align: center; }
-.scen b { display: block; font-size: 15px; color: var(--text); }
-/* chart */
+.cmpgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.cmpcard { border: 1px solid var(--border); border-radius: 12px; padding: 12px; font-size: 14px; }
+.pick { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; padding: 3px 0; }
+.pick .bn { font-weight: 700; min-width: 62px; }
 .chart-box { position: relative; }
 .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-2); margin-bottom: 6px; }
 .legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
@@ -139,8 +179,7 @@ details.step[open] > summary::before { content: "▾"; }
 svg text { fill: var(--text-3); font-size: 11px; }
 .tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
   padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,.12); white-space: nowrap; display: none; z-index: 2; }
-/* tables */
-.tbl-wrap { overflow-x: auto; max-height: 460px; overflow-y: auto; }
+.tbl-wrap { overflow-x: auto; max-height: 420px; overflow-y: auto; }
 table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
 th, td { padding: 5px 8px; text-align: right; border-bottom: 1px solid var(--grid); white-space: nowrap; }
 th { position: sticky; top: 0; background: var(--surface); color: var(--text-2); font-weight: 600; z-index: 1; }
@@ -148,109 +187,195 @@ td.strike { font-weight: 700; text-align: center; background: var(--surface-2); 
 tr.inzone td.strike { box-shadow: inset 3px 0 0 var(--accent); }
 tr.hl td { background: var(--surface-2); font-weight: 700; }
 tr.atm td { border-bottom: 2px solid var(--text-3); }
-details.card > summary { cursor: pointer; font-weight: 600; color: var(--text-2); }
-ul.rules { margin: 8px 0 0; padding-left: 18px; color: var(--text-2); font-size: 13px; }
-.foot { margin-top: 24px; color: var(--text-3); font-size: 12px; line-height: 1.6; }
+.foot { margin-top: 22px; color: var(--text-3); font-size: 12px; line-height: 1.6; }
 .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid currentColor; border-right-color: transparent;
   border-radius: 50%; animation: s .7s linear infinite; vertical-align: -2px; }
 @keyframes s { to { transform: rotate(360deg); } }
-@media (max-width: 760px) {
-  .props { grid-template-columns: 1fr; }
-  .step-grid, .summary { grid-template-columns: 1fr 1fr; }
-}
-@media (max-width: 600px) {
-  .wrap { padding: 12px 12px 40px; }
-  h1 { font-size: 17px; }
-  .controls { padding: 12px; gap: 10px; }
-  .controls > label { flex: 1 1 100%; }
-  .controls > label input { width: 100%; }
-  #scanBtn { flex: 1 1 100%; min-height: 48px; font-size: 16px; }
-  .theme-btn { padding: 4px 10px; min-height: 30px; font-size: 12px; }
+@media (max-width: 700px) {
+  .timeline { grid-template-columns: 1fr 1fr; }
+  .cmpgrid { grid-template-columns: 1fr; }
+  .hero-title { font-size: 22px; }
 }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <h1>Index Strangle Planner</h1>
-    <span class="ro">READ-ONLY</span>
-    <span class="badge" id="demoBadge" hidden>DEMO DATA — NOT MARKET PRICES</span>
-    <button class="theme-btn" id="themeBtn">◐ Theme</button>
+    <h1>Big-Move Planner</h1>
+    <span class="ro">ONLY SHOWS — NEVER BUYS</span>
+    <span class="badge" id="demoBadge" hidden>PRACTICE DATA — NOT REAL PRICES</span>
+    <div class="hbtns">
+      <button class="small" id="guideBtn">📘 Guide</button>
+      <button class="small" id="themeBtn" aria-label="Light or dark">◐</button>
+    </div>
   </header>
-  <div class="sub">Pick an index. The planner scans its useful expiries and proposes call + put combinations and a catalyst plan. Rejects strikes that are unrealistic or that you couldn't actually trade. Verify every price in your broker.</div>
 
-  <form class="controls card" id="form">
-    <div class="seg" id="indexSeg" role="radiogroup" aria-label="Index"></div>
-    <label>Max budget per pair (₹, optional)
-      <input type="number" id="budget" min="0" step="500" placeholder="no limit" inputmode="numeric"></label>
-    <button class="primary" type="submit" id="scanBtn">Scan &amp; propose</button>
-    <details class="more">
-      <summary>Settings</summary>
-      <div class="more-body">
-        <label>Lot size (blank = index default) <input type="number" id="lot" min="1" step="1"></label>
-        <label>Charges ₹ flat <input type="number" id="cflat" min="0" step="1"></label>
-        <label>Charges % <input type="number" id="cpct" min="0" step="0.5"></label>
-        <label>Closest strike (σ) <input type="number" id="min_sigma" min="0.25" max="3" step="0.05"></label>
-        <label>Farthest strike (σ) <input type="number" id="max_sigma" min="0.5" max="4" step="0.05"></label>
-        <label>Min open interest <input type="number" id="min_oi" min="0" step="50"></label>
-        <label>Source <select id="source"><option value="auto">Auto</option><option value="nse">NSE direct</option><option value="nsepython">nsepython</option></select></label>
-        <label>Auto-refresh <select id="auto"><option value="0">Off</option><option value="120">2 min</option><option value="300">5 min</option><option value="900">15 min</option></select></label>
-        <label class="check"><input type="checkbox" id="log" checked> Log scans to history</label>
+  <!-- GUIDE -->
+  <section class="card guide" id="guide" hidden>
+    <div style="display:flex;align-items:center;gap:8px"><h2 style="margin:0">The 2-minute guide</h2>
+      <button class="small" id="guideClose" style="margin-left:auto">Close</button></div>
+    <div class="lesson">
+      <h3><span class="num">1</span>The idea in one line</h3>
+      <p>You buy <b>two tickets</b>: one that pays if the market <b>shoots up</b>, one that pays if it <b>crashes</b>.
+        If a big move happens quickly, one ticket can become worth several times what you paid for both.
+        If the market stays calm, both tickets slowly lose value.</p>
+      <div class="tickets">
+        <div class="ticket up"><b>⬆ Up ticket</b>called a <i>Call</i> (CE). Pays if the market rises above its trigger level.</div>
+        <div class="ticket down"><b>⬇ Down ticket</b>called a <i>Put</i> (PE). Pays if the market falls below its trigger level.</div>
       </div>
-    </details>
-  </form>
+    </div>
+    <div class="lesson">
+      <h3><span class="num">2</span>A ticket, with real numbers</h3>
+      <p>Bank Nifty is at <b>60,800</b>. An up ticket with trigger level <b>66,600</b> costs <b>₹140</b> per unit.
+        Tickets come in packs (a "lot"), and a Bank Nifty pack has 30 units, so one pack costs ₹140 × 30 = <b>₹4,200</b>.</p>
+      <p>On the end date, if Bank Nifty is at <b>68,000</b>, the ticket is worth 68,000 − 66,600 = ₹1,400 per unit → <b>₹42,000</b>.
+        If Bank Nifty is <b>below 66,600</b>, it's worth <b>₹0</b> and you lose the ₹4,200. You can never lose more than you paid.</p>
+      <p>You don't have to wait for the end date. You can sell the ticket any day, and after a big jump its price rises well before then.</p>
+    </div>
+    <div class="lesson">
+      <h3><span class="num">3</span>The picture</h3>
+      <p>This is what the two-ticket bet looks like. Across the bottom: where the market ends up. Up the side: your profit or loss.
+        The flat red floor is the most you can lose. You only make money beyond the two "profit lines".</p>
+      <div id="guidePic"></div>
+    </div>
+    <div class="lesson">
+      <h3><span class="num">4</span>The honest part: it usually loses</h3>
+      <p>Tickets lose a little value <b>every day</b> the market doesn't move. Over many months the people <i>selling</i> tickets tend to win.
+        Bought every month without thinking, this bet slowly loses money.</p>
+      <p>That's why this app only suggests buying <b>about a week before a big news day</b> (like an RBI interest-rate decision),
+        when a big move is more likely, and <b>selling soon after</b>.</p>
+    </div>
+    <div class="lesson">
+      <h3><span class="num">5</span>Timing rules the app follows</h3>
+      <p>✅ Buy in the window shown, about a week before the news.<br>
+         💰 If the market jumps, sell half when your tickets are worth 3× what you paid, the rest at 5×.<br>
+         ⏱ If nothing happens, sell 2 days after the news. Ticket prices drop once the news is out.<br>
+         🚫 Never hold into the last week before the end date. That's when tickets lose value fastest.</p>
+    </div>
+    <div class="lesson">
+      <h3><span class="num">6</span>Before you use real money</h3>
+      <p>Only use money you are fine losing <b>completely</b>. That's the normal outcome of a single bet.
+        Watch the app through one or two news days <b>without buying</b> first, to see how the prices behave.
+        This app only shows information. It never places an order.</p>
+      <p class="muted">Tap any <button type="button" class="q" data-t="q" aria-label="Example">?</button> in the app to see what a word means.</p>
+    </div>
+  </section>
+
+  <!-- INDEX -->
+  <section class="card">
+    <div class="kicker">Step 1 · Pick a market</div>
+    <div class="seg" id="indexSeg" role="radiogroup" aria-label="Market"></div>
+    <div class="about" id="about"></div>
+    <div class="statusline" id="statusline"></div>
+  </section>
 
   <div id="err" class="banner err" hidden></div>
-  <div class="status" id="status"></div>
 
-  <section class="card">
-    <h2>Compare indices for the next event</h2>
-    <div id="cmp"><div class="muted">Scans Bank Nifty, Nifty 50 and Sensex and lines up the best Near / Mid / Far pair for each one's next catalyst. Takes a few seconds.</div>
-      <button type="button" id="cmpBtn" style="margin-top:10px">Compare all three</button></div>
-  </section>
+  <!-- TODAY -->
+  <section class="card hero wait" id="today"><div class="placeholder"><span class="spin"></span> Loading prices…</div></section>
 
-  <section class="card">
-    <h2>Your plan — which event, when to enter, when to exit</h2>
-    <div id="plan"><div class="placeholder">Press <b>Scan &amp; propose</b>.</div></div>
-    <details style="margin-top:8px"><summary class="muted" style="cursor:pointer">How the plan is built</summary><ul class="rules" id="planRules"></ul></details>
-  </section>
-
-  <section class="card">
-    <h2>Proposals by expiry</h2>
-    <div class="tabs" id="tabs"></div>
-    <div id="expPanel"><div class="placeholder">—</div></div>
-  </section>
-
-  <section class="card">
-    <h2>Premiums by strike — <span id="chartExp"></span></h2>
-    <div class="legend">
-      <span><i style="background:var(--call)"></i>Call (CE) ask</span>
-      <span><i style="background:var(--put)"></i>Put (PE) ask</span>
-      <span><i class="zone"></i>Allowed zone (reachable)</span>
+  <!-- CHOICES -->
+  <section class="card" id="choicesCard">
+    <div class="kicker">Step 2 · Your choices</div>
+    <h2 id="choicesTitle">Your 3 choices</h2>
+    <p class="lead">Each choice is <b>one up ticket + one down ticket</b><button type="button" class="q" data-t="strangle">?</button>.
+      They differ in how far the trigger levels are from today's market.</p>
+    <div class="budget">
+      <label>Most I want to spend (optional)
+        <input type="number" id="budget" min="0" step="500" placeholder="No limit" inputmode="numeric"></label>
+      <button type="button" id="budgetBtn">Apply</button>
     </div>
-    <div class="chart-box" id="chartBox">
-      <svg id="chart" width="100%" height="320" role="img" aria-label="Out-of-the-money call and put ask prices by strike, log scale, with the allowed strike zone shaded"></svg>
-      <div class="tip" id="tip"></div>
-    </div>
-    <div class="muted">Log scale, out-of-the-money side only. Dots = selected proposal. Outside the shaded zone a strike is too close (expensive) or too far (unrealistic).</div>
+    <div id="choices"></div>
   </section>
 
-  <details class="card" style="margin-top:16px">
-    <summary>Full option chain — <span id="tblExp"></span></summary>
-    <div class="tbl-wrap" id="chainTbl"><div class="placeholder">No data yet.</div></div>
-  </details>
+  <!-- SELL PLAN -->
+  <section class="card" id="sellCard">
+    <div class="kicker">Step 3 · When to sell</div>
+    <h2>Decide your exit before you buy</h2>
+    <ul class="steps" id="sell"></ul>
+  </section>
 
-  <details class="card" style="margin-top:16px" open>
-    <summary>History — is volatility getting cheaper before the next event?</summary>
-    <div class="tbl-wrap" id="histTbl"><div class="placeholder">No logged scans yet.</div></div>
-  </details>
+  <!-- EVENTS -->
+  <section class="card">
+    <div class="kicker">Big news days coming up</div>
+    <p class="lead" style="margin-bottom:4px">Big moves cluster around scheduled news<button type="button" class="q" data-t="catalyst">?</button>. Tap one to plan for it.</p>
+    <div id="events"></div>
+    <p class="muted" style="margin-top:8px">Dates are from a calendar written in Nov 2026. Double-check each one in the news.</p>
+  </section>
+
+  <!-- ADVANCED -->
+  <section class="card">
+    <details class="adv" id="adv">
+      <summary>Advanced: all details, compare markets, settings</summary>
+
+      <div class="advsec">
+        <h3>Compare the three markets</h3>
+        <div id="cmp"><p class="muted">Lines up the cheapest-to-best choices for each market's next news day. Takes a few seconds.</p>
+          <button type="button" id="cmpBtn">Compare all three</button></div>
+      </div>
+
+      <div class="advsec">
+        <h3>Every end date<button type="button" class="q" data-t="expiry">?</button></h3>
+        <div class="tabs" id="tabs"></div>
+        <div id="expPanel"></div>
+      </div>
+
+      <div class="advsec">
+        <h3>Ticket prices by trigger level — <span id="chartExp"></span></h3>
+        <div class="legend">
+          <span><i style="background:var(--call)"></i>Up tickets (calls)</span>
+          <span><i style="background:var(--put)"></i>Down tickets (puts)</span>
+          <span><i class="zone"></i>Sensible range</span>
+        </div>
+        <div class="chart-box" id="chartBox">
+          <svg id="chart" width="100%" height="300" role="img" aria-label="Ticket prices by trigger level"></svg>
+          <div class="tip" id="tip"></div>
+        </div>
+        <p class="muted">Price scale grows ×10 per step. Outside the shaded range a trigger level is too close (expensive) or too far (unrealistic).</p>
+      </div>
+
+      <div class="advsec">
+        <details><summary class="linkbtn">Full price table</summary>
+          <div class="tbl-wrap" id="chainTbl" style="margin-top:8px"></div></details>
+      </div>
+
+      <div class="advsec">
+        <h3>Price history from your scans</h3>
+        <p class="muted">If prices for your planned end date fall in the days before the news, buying gets cheaper. Watch the "nervousness" column<button type="button" class="q" data-t="iv">?</button>.</p>
+        <div class="tbl-wrap" id="histTbl"><div class="placeholder">No saved scans yet.</div></div>
+      </div>
+
+      <div class="advsec">
+        <h3>Settings</h3>
+        <div class="settings">
+          <label>Pack size (blank = normal)<input type="number" id="lot" min="1" step="1"></label>
+          <label>Broker fee ₹ per pair<input type="number" id="cflat" min="0" step="1"></label>
+          <label>Taxes & fees %<input type="number" id="cpct" min="0" step="0.5"></label>
+          <label>Closest trigger (σ)<input type="number" id="min_sigma" min="0.25" max="3" step="0.05"></label>
+          <label>Farthest trigger (σ)<input type="number" id="max_sigma" min="0.5" max="4" step="0.05"></label>
+          <label>Min open interest<input type="number" id="min_oi" min="0" step="50"></label>
+          <label>Data source<select id="source"><option value="auto">Auto</option><option value="nse">NSE direct</option><option value="nsepython">nsepython</option></select></label>
+          <label>Auto-refresh<select id="auto"><option value="0">Off</option><option value="120">2 min</option><option value="300">5 min</option><option value="900">15 min</option></select></label>
+          <label class="check"><input type="checkbox" id="log" checked> Save each scan to history</label>
+        </div>
+        <button type="button" class="primary" id="applyBtn" style="margin-top:10px">Apply settings</button>
+      </div>
+    </details>
+  </section>
 
   <div class="foot">
-    <b>Reality check:</b> Bought mechanically every month, these strangles lose a little over time, because option sellers usually charge more volatility than the market delivers.
-    They only make sense bought selectively, before a real catalyst while volatility is cheap, and exited into a fast move.
-    Chances shown are what the market itself is pricing ("market-implied"). They are not a forecast or an edge.
-    Move scenarios assume implied volatility stays the same. In a crash put volatility usually rises, so the put side may be worth more than shown.
-    This app never places orders.
+    This app only shows information and never places orders. Chances shown are what market prices imply, not predictions.
+    "If it jumps" figures assume prices react normally. In a crash, down tickets often gain even more.
+    Prices change every second, so check them in your broker app before buying.
+  </div>
+</div>
+
+<!-- term sheet -->
+<div class="sheet-bg" id="sheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <h3 id="sheetTitle"></h3>
+    <div id="sheetBody"></div>
+    <button class="primary" id="sheetClose" style="margin-top:14px;width:100%">Got it</button>
   </div>
 </div>
 
@@ -258,242 +383,391 @@ ul.rules { margin: 8px 0 0; padding-left: 18px; color: var(--text-2); font-size:
 const $ = id => document.getElementById(id);
 const fmt = (v, d = 2) => v == null || v === "" || isNaN(v) ? "—" : Number(v).toLocaleString("en-IN", { minimumFractionDigits: d, maximumFractionDigits: d });
 const fmt0 = v => fmt(v, 0);
+const rs = v => (v < 0 ? "−₹" : "₹") + fmt0(Math.abs(v));
 const sgn = (v, d = 1) => v == null ? "—" : (v >= 0 ? "+" : "−") + fmt(Math.abs(v), d);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const dshort = iso => new Date(iso + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+const D = iso => new Date(iso + "T00:00:00");
+const dshort = iso => D(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+const dlong = iso => D(iso).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" });
+const days = (a, b) => Math.round((D(b) - D(a)) / 864e5);
+const expIso = e => { const d = new Date(e.replace(/-/g, " ")); return d.toISOString().slice(0, 10); };
 const eshort = e => e.replace(/-\d{4}$/, "").replace("-", " ");
-const NOT_RUNNING = "The planner isn't running on this phone.\nOpen Termux and type:  scanner   (or tap the Strangle Scanner widget), then try again.";
-let cfg = null, last = null, selExp = null, selCombo = null, timer = null, busy = false;
+const NOT_RUNNING = "The planner isn't running on this phone.\nOpen Termux and type:  scanner   then come back and pull down to refresh.";
+const q = t => `<button type="button" class="q" data-t="${t}" aria-label="What does this mean?">?</button>`;
 
-// ---------- theme ----------
-try { const t = localStorage.getItem("theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+// ---------- plain-language glossary ----------
+const GLOSS = {
+  q: ["Like this!", "<p>Tap these whenever a word is unclear.</p>"],
+  strangle: ["Two-ticket bet (a \"strangle\")",
+    "<p>You buy one <b>up ticket</b> and one <b>down ticket</b> together. You win if the market moves <b>a lot in either direction</b>. If it stays calm, both lose value slowly.</p><p>Traders call this a <i>long strangle</i>.</p>"],
+  call: ["Up ticket (Call, CE)", "<p>Gains value when the market <b>rises</b>. At the end date it's worth the amount the market is <b>above</b> its trigger level, or ₹0 if it's below.</p><div class='ex'>Trigger 66,600, market ends at 68,000 → worth ₹1,400 per unit.</div>"],
+  put: ["Down ticket (Put, PE)", "<p>Gains value when the market <b>falls</b>. At the end date it's worth the amount the market is <b>below</b> its trigger level, or ₹0 if it's above.</p><div class='ex'>Trigger 55,700, market ends at 53,000 → worth ₹2,700 per unit.</div>"],
+  strike: ["Trigger level (strike)", "<p>The market level where a ticket starts being worth something at the end date. Farther trigger levels are cheaper, but need a bigger move.</p>"],
+  premium: ["Ticket price (premium)", "<p>What one ticket costs <b>per unit</b>. You pay this × pack size. The total you pay is the <b>most you can lose</b>.</p>"],
+  lot: ["Pack size (lot)", "<p>Tickets are sold in fixed packs. Bank Nifty: 30 units, Nifty 50: 65, Sensex: 20. These change occasionally, so check in your broker app.</p><div class='ex'>A ₹140 ticket × 30 units = ₹4,200 for one pack.</div>"],
+  expiry: ["End date (expiry)", "<p>The day the ticket finishes. If the market isn't past the trigger level then, it's worth ₹0. You can sell any day before.</p>"],
+  breakeven: ["Profit lines (breakevens)", "<p>If the market ends <b>above the upper line</b> or <b>below the lower line</b> on the end date, you make money. Between them you lose some or all of what you paid.</p><p>Selling early after a fast move can make money even before the market reaches these lines.</p>"],
+  iv: ["Market nervousness (implied volatility, IV)", "<p>How big a move the market is expecting, worked out from ticket prices. When it's <b>high</b>, tickets are <b>expensive</b>. The best time to buy is when it's low before a big news day.</p>"],
+  normal: ["Normal move", "<p>How much the market expects this index to move by the end date. About 2 times in 3 it ends up <b>within</b> this range. Traders call it \"one sigma\" (1σ).</p>"],
+  sigma: ["σ (sigma)", "<p>A yardstick: 1σ = the normal move by the end date. The app only uses trigger levels between 0.75σ and 2σ away. Closer is expensive; farther is a lottery ticket that almost never pays.</p>"],
+  decay: ["Daily loss (time decay)", "<p>Tickets lose a little value <b>every day</b> the market doesn't move, faster near the end date. This is the cost of waiting.</p>"],
+  chance: ["Market's own estimate", "<p>Worked out from ticket prices: the chance the market <b>reaches</b> one of your profit lines at some point before the end date. It's what the market is pricing in, not a prediction.</p>"],
+  multiple: ["× (times your money)", "<p>2× means your tickets are worth twice what you paid. 1× means you'd get your money back.</p>"],
+  bidask: ["Buy price & sell price (ask / bid)", "<p><b>Ask</b> = the lowest price a seller accepts, which is what you pay. <b>Bid</b> = what a buyer offers, which is what you'd get selling right now. A big gap means the ticket is hard to trade.</p>"],
+  limit: ["Limit order", "<p>An order that says \"buy, but <b>don't pay more than</b> this price\". Always use one for tickets. Prices jump around, and a plain market order can fill at a bad price.</p>"],
+  oi: ["Open interest", "<p>How many of this ticket currently exist. More means easier to buy and sell. The app ignores tickets that are too rarely traded.</p>"],
+  catalyst: ["Big news day (catalyst)", "<p>A scheduled event that can make the market jump: RBI interest-rate decisions, the Budget, US rate decisions, big banks' results. Between these days markets are usually calmer, and tickets just lose value.</p>"],
+  index: ["Market (index)", "<p>A number tracking a basket of big companies. You aren't buying shares, just tickets on where this number goes.</p>"],
+};
+function openSheet(t) {
+  const g = GLOSS[t]; if (!g) return;
+  $("sheetTitle").textContent = g[0]; $("sheetBody").innerHTML = g[1]; $("sheet").hidden = false;
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest(".q");
+  if (b) { e.preventDefault(); e.stopPropagation(); openSheet(b.dataset.t); }
+}, true);
+$("sheetClose").onclick = () => $("sheet").hidden = true;
+$("sheet").onclick = e => { if (e.target === $("sheet")) $("sheet").hidden = true; };
+
+// ---------- state ----------
+let cfg = null, last = null, INDEX = "BANKNIFTY", evIdx = 0, openBand = "Mid", busy = false, timer = null;
+let advExp = null, advCombo = null;
+const BAND = {
+  Near: { name: "Closer", tag: "costs most · pays off most often" },
+  Mid: { name: "Middle", tag: "balanced" },
+  Far: { name: "Farther", tag: "cheapest · pays big but rarely" },
+};
+const store = { get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+                set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} } };
+
+// ---------- theme / guide ----------
+{ const t = store.get("theme", null); if (t) document.documentElement.dataset.theme = t; }
 $("themeBtn").onclick = () => {
   const cur = document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-  const nxt = cur === "dark" ? "light" : "dark";
-  document.documentElement.dataset.theme = nxt;
-  try { localStorage.setItem("theme", nxt); } catch (e) {}
-  if (last) drawChart();
+  document.documentElement.dataset.theme = cur === "dark" ? "light" : "dark";
+  store.set("theme", document.documentElement.dataset.theme);
+  if (last) renderAll();
 };
+function showGuide(on) {
+  $("guide").hidden = !on;
+  if (on) { drawGuidePic(); $("guide").scrollIntoView({ behavior: "smooth" }); }
+  store.set("seenGuide", true);
+}
+$("guideBtn").onclick = () => showGuide($("guide").hidden);
+$("guideClose").onclick = () => showGuide(false);
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 
 // ---------- settings ----------
 const FIELDS = ["budget", "cflat", "cpct", "min_sigma", "max_sigma", "min_oi", "source"];
-let INDEX = "BANKNIFTY";
-function renderSeg() {
-  $("indexSeg").innerHTML = Object.entries(cfg.indices).map(([k, v]) =>
-    `<button type="button" role="radio" aria-checked="${k === INDEX}" data-ix="${k}">${esc(v.name)}</button>`).join("");
-  $("indexSeg").querySelectorAll("button").forEach(b => b.onclick = () => {
-    if (b.dataset.ix === INDEX) return;
-    INDEX = b.dataset.ix;
-    try { localStorage.setItem("plannerIndex", INDEX); } catch (e) {}
-    $("lot").value = "";
-    renderSeg(); selExp = null; scan(false);
-  });
-  const ix = cfg.indices[INDEX];
-  $("lot").placeholder = `${ix.lot} (verify)`;
-  document.querySelector("h1").textContent = `${ix.name} Strangle Planner`;
-}
 async function init() {
   try { cfg = await (await fetch("/api/config")).json(); }
-  catch (e) { showErr(NOT_RUNNING); return; }
+  catch (e) { $("today").innerHTML = `<div class="banner err" style="margin:0">${esc(NOT_RUNNING)}</div>`; return; }
   $("demoBadge").hidden = !cfg.demo;
-  let saved = {};
-  try { saved = JSON.parse(localStorage.getItem("plannerForm") || "{}"); } catch (e) {}
-  for (const f of FIELDS) {
-    const v = saved[f] ?? cfg[f];
-    if (v != null) $(f).value = v;
-  }
-  try { const ix = localStorage.getItem("plannerIndex"); if (ix && cfg.indices[ix]) INDEX = ix; } catch (e) {}
+  const saved = store.get("plannerForm", {});
+  for (const f of FIELDS) { const v = saved[f] ?? cfg[f]; if (v != null) $(f).value = v; }
+  const ix = store.get("plannerIndex", null); if (ix && cfg.indices[ix]) INDEX = ix;
   renderSeg();
-  loadHistory();
+  if (!store.get("seenGuide", false)) showGuide(true);
   scan(false);
 }
 function params(force) {
   const p = {};
   for (const f of FIELDS) p[f] = $(f).value;
-  try { localStorage.setItem("plannerForm", JSON.stringify(p)); } catch (e) {}
-  p.index = INDEX;
-  p.lot = $("lot").value;
-  p.log = $("log").checked ? 1 : 0;
-  p.force = force ? 1 : 0;
+  store.set("plannerForm", p);
+  Object.assign(p, { index: INDEX, lot: $("lot").value, log: $("log").checked ? 1 : 0, force: force ? 1 : 0 });
   return new URLSearchParams(p);
 }
-$("form").onsubmit = e => { e.preventDefault(); scan(true); };
+function renderSeg() {
+  $("indexSeg").innerHTML = Object.entries(cfg.indices).map(([k, v]) =>
+    `<button type="button" role="radio" aria-checked="${k === INDEX}" data-ix="${k}">${esc(v.name)}</button>`).join("");
+  $("indexSeg").querySelectorAll("button").forEach(b => b.onclick = () => {
+    if (b.dataset.ix === INDEX) return;
+    INDEX = b.dataset.ix; store.set("plannerIndex", INDEX); $("lot").value = "";
+    evIdx = 0; advExp = null; renderSeg(); scan(false);
+  });
+  const ix = cfg.indices[INDEX];
+  $("about").innerHTML = `${esc(ix.about)}${q("index")}`;
+  $("lot").placeholder = String(ix.lot);
+}
+$("budgetBtn").onclick = () => scan(true);
+$("budget").onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); scan(true); } };
+$("applyBtn").onclick = () => scan(true);
 $("auto").onchange = () => { clearInterval(timer); const s = +$("auto").value; if (s) timer = setInterval(() => scan(false), s * 1000); };
-function showErr(msg) { $("err").hidden = false; $("err").textContent = msg; }
 
 async function scan(force) {
   if (busy) return;
   busy = true;
-  $("scanBtn").disabled = true;
-  $("scanBtn").innerHTML = '<span class="spin"></span> Scanning all expiries…';
+  $("statusline").innerHTML = `<span><span class="spin"></span> Getting live prices for ${esc(cfg.indices[INDEX].name)}…</span>`;
   try {
     const d = await (await fetch("/api/proposals?" + params(force))).json();
     if (!d.ok) throw new Error(d.error || "Unknown error");
     $("err").hidden = true;
     last = d;
-    if (!selExp || !d.expiries.some(e => e.expiry === selExp)) selExp = defaultExpiry(d);
-    selCombo = null;
     renderAll();
     if ($("log").checked) loadHistory();
   } catch (e) {
-    showErr(e instanceof TypeError ? NOT_RUNNING : "Couldn't load data — nothing shown rather than possibly-wrong numbers.\n" + e.message);
-  } finally {
-    busy = false;
-    $("scanBtn").disabled = false;
-    $("scanBtn").textContent = "Scan & propose";
-  }
+    $("err").hidden = false;
+    $("err").textContent = e instanceof TypeError ? NOT_RUNNING : "Couldn't get prices, so nothing is shown rather than wrong numbers.\n\n" + e.message;
+    $("statusline").innerHTML = `<button class="small" id="refreshBtn">↻ Try again</button>`;
+    $("refreshBtn").onclick = () => scan(true);
+  } finally { busy = false; }
 }
-function nextStep(d) { return d.plan.find(p => p.status !== "event passed"); }
-function defaultExpiry(d) {
-  const nxt = nextStep(d);
-  if (nxt && nxt.expiry && d.expiries.some(e => e.expiry === nxt.expiry)) return nxt.expiry;
-  const usable = d.expiries.find(e => !e.skipped_reason);
-  return (usable || d.expiries[0]).expiry;
+
+// ---------- derived ----------
+const upcoming = () => last.plan.filter(p => p.exit_if_no_move >= last.today);
+const expByName = n => last.expiries.find(e => e.expiry === n);
+const contract = (leg, expiry) => `${last.index.symbol} ${expiry.slice(0, 2)} ${expiry.slice(3, 6).toUpperCase()} ${Math.round(leg.strike)} ${leg.opt}`;
+function phase(p) {
+  const t = last.today;
+  if (t < p.entry_from) return { k: "wait", chip: "Wait", n: days(t, p.entry_from) };
+  if (t <= p.entry_to) return { k: "go", chip: "Buying window open", n: days(t, p.entry_to) };
+  return { k: "stop", chip: "News time — don't buy", n: days(t, p.exit_if_no_move) };
 }
-function expByName(name) { return last.expiries.find(e => e.expiry === name); }
-function bestOf(exp, band) { const b = exp && exp.bands[band]; return b && b.length ? b[0] : null; }
-function selectExpiry(name) { selExp = name; selCombo = null; renderTabs(); renderExpiry(); drawChart(); renderChain(); }
 
 function renderAll() {
   const d = last;
-  $("status").innerHTML = [
-    `${esc(d.index.name)} <b>${fmt(d.spot)}</b>`, `Lot <b>${d.rules.lot_size}</b>`, `Expiries <b>${esc(d.index.expiries)}</b>`, `NSE time <b>${esc(d.timestamp)}</b>`,
-    `Source <b>${esc(d.source)}</b>`, `Fetched <b>${new Date(d.fetched_at).toLocaleTimeString()}</b>`,
-  ].map(s => `<span>${s}</span>`).join("");
-  if (d.problems.length) showErr("Some expiries could not be read:\n" + d.problems.join("\n"));
-  renderPlan(); renderTabs(); renderExpiry(); drawChart(); renderChain();
+  $("statusline").innerHTML = `<span>${esc(d.index.name)} now: <b>${fmt(d.spot)}</b></span>
+    <span>Prices from ${esc(d.timestamp)}</span><button class="small" id="refreshBtn">↻ Refresh prices</button>`;
+  $("refreshBtn").onclick = () => scan(true);
+  const ups = upcoming();
+  if (evIdx >= ups.length) evIdx = 0;
+  renderToday(); renderChoices(); renderSell(); renderEvents();
+  if (!advExp || !expByName(advExp)) advExp = (ups[evIdx] && ups[evIdx].expiry && expByName(ups[evIdx].expiry)) ? ups[evIdx].expiry : (d.expiries.find(e => !e.skipped_reason) || d.expiries[0]).expiry;
+  advCombo = null;
+  renderTabs(); renderExpiry(); drawChart(); renderChain();
 }
 
-// ---------- plan ----------
-function renderPlan() {
-  const d = last, nxt = nextStep(d);
-  $("planRules").innerHTML = d.plan_rules.map(r => `<li>${esc(r)}</li>`).join("");
-  if (!d.plan.length) { $("plan").innerHTML = '<div class="placeholder">No upcoming catalysts in the calendar.</div>'; return; }
-  $("plan").innerHTML = d.plan.map(p => {
-    const exp = p.expiry && expByName(p.expiry);
-    const chip = p.status === "entry window open" ? "open" : p.status === "event passed" ? "past" : "soon";
-    const picks = exp && !exp.skipped_reason ? ["Near", "Mid", "Far"].map(b => {
-      const c = bestOf(exp, b);
-      return c ? `<div class="pick"><span class="bn">${b}</span><span>CE ${fmt0(c.call.strike)} + PE ${fmt0(c.put.strike)}</span>
-        <b>₹${fmt0(c.cost)}</b><span class="muted">±5% within a week → ${fmt(c.score, 1)}×</span></div>` : "";
-    }).join("") : "";
-    const body = `
-      <div class="muted" style="margin-top:2px">${esc(p.note)}</div>
-      <div class="step-grid">
-        <div>Enter between<b>${dshort(p.entry_from)} – ${dshort(p.entry_to)}</b></div>
-        <div>Use expiry<b>${p.expiry ? eshort(p.expiry) : "not listed yet"}</b></div>
-        <div>No move? Exit by<b>${dshort(p.exit_if_no_move)}</b></div>
-        <div>Hard exit by<b>${p.hard_exit ? dshort(p.hard_exit) : "—"}</b></div>
-      </div>
-      ${p.expiry_note ? `<div class="muted">${esc(p.expiry_note)}</div>` : ""}
-      ${picks ? `<div class="picks">${picks}</div><button class="linkbtn" data-exp="${esc(p.expiry)}">See all proposals for ${eshort(p.expiry)} →</button>` : ""}`;
-    if (p !== nxt) return `<details class="step"><summary class="step-head" style="cursor:pointer">
-        <span class="step-date">${dshort(p.date)}</span><h3>${esc(p.event)}</h3>
-        <span class="muted">enter ${dshort(p.entry_from)}–${dshort(p.entry_to)} · ${p.expiry ? eshort(p.expiry) + " expiry" : "expiry not listed yet"}</span>
-        <span class="chip ${chip}">${esc(p.status)}</span></summary>${body}</details>`;
-    return `<div class="step">
-      <div class="step-head"><span class="step-date">${dshort(p.date)}</span><h3>${esc(p.event)}</h3><span class="chip ${chip}">${esc(p.status)}</span>${p === nxt ? '<span class="chip open">NEXT</span>' : ""}</div>
-      ${body}
-    </div>`;
+// ---------- step: today ----------
+function renderToday() {
+  const ups = upcoming(), p = ups[evIdx], el = $("today");
+  if (!p) { el.className = "card hero wait"; el.innerHTML = `<div class="hero-title">No big news days in the calendar right now.</div><p class="hero-sub">Nothing to do. Holding tickets without a reason just loses money each day.</p>`; return; }
+  const ph = phase(p), name = esc(p.plain);
+  let title, sub;
+  if (ph.k === "wait") {
+    title = `Wait. Nothing to buy yet.`;
+    sub = `Next big day: <b>${name}</b> on <b>${dlong(p.date)}</b>. The buying window opens <b>${dlong(p.entry_from)}</b> (in ${ph.n} day${ph.n === 1 ? "" : "s"}). Buying earlier just loses money to daily decay${q("decay")}.`;
+  } else if (ph.k === "go") {
+    title = `Buying window is open.`;
+    sub = `For <b>${name}</b> on <b>${dlong(p.date)}</b>. If you want this bet, buy one of the choices below by <b>${dlong(p.entry_to)}</b>.`;
+  } else {
+    title = `News time. Don't buy now.`;
+    sub = `<b>${name}</b> is happening. If you already bought, follow Step 3: take profit on a big move, otherwise sell by <b>${dlong(p.exit_if_no_move)}</b>.`;
+  }
+  const t = last.today, stages = [
+    ["Buy from", p.entry_from], ["Buy by", p.entry_to], [name.length > 14 ? "News day" : name, p.reaction_day], ["Sell by (no move)", p.exit_if_no_move]];
+  const nowIdx = t < p.entry_from ? -1 : t <= p.entry_to ? 0 : t <= p.reaction_day ? 2 : 3;
+  el.className = `card hero ${ph.k}`;
+  el.innerHTML = `
+    <div class="kicker">What to do today · ${dlong(t)}</div>
+    <div class="hero-title">${title}</div>
+    <div class="hero-sub">${sub}</div>
+    <div class="timeline">${stages.map((s, i) => `<div class="tl ${i === nowIdx ? "now" : ""}">${s[0]}<b>${dshort(s[1])}</b></div>`).join("")}</div>
+    <div class="why"><b>Why this day matters:</b> ${esc(p.why)}</div>
+    ${p.expiry ? "" : `<div class="banner warn">${esc(p.expiry_note)}</div>`}`;
+}
+
+// ---------- step: choices ----------
+function renderChoices() {
+  const p = upcoming()[evIdx], box = $("choices");
+  const exp = p && p.expiry && expByName(p.expiry);
+  $("choicesTitle").textContent = p ? `Your 3 choices for ${p.plain}` : "Your choices";
+  if (!p || !exp) { box.innerHTML = `<div class="placeholder">No end date available for this news day yet.</div>`; return; }
+  if (exp.skipped_reason) { box.innerHTML = `<div class="banner warn">${esc(exp.skipped_reason)}</div>`; return; }
+  const ph = phase(p);
+  let h = ph.k === "wait" ? `<div class="banner ok" style="margin-top:0">These are <b>today's prices</b>, to show what the bet would look like. Prices will be different when the window opens on ${dshort(p.entry_from)}.</div>` : "";
+  h += `<p class="muted" style="margin:0">All use the end date <b>${dlong(expIso(exp.expiry))}</b>${q("expiry")} (${exp.dte} days away). Normal move by then: <b>±${fmt(exp.one_sigma_pct, 1)}%</b>${q("normal")}.</p>`;
+  let any = false;
+  for (const b of ["Near", "Mid", "Far"]) {
+    const c = (exp.bands[b] || [])[0];
+    if (!c) { h += `<div class="choice"><div class="choice-head"><h3>${BAND[b].name}</h3><span class="tag">${BAND[b].tag}</span></div><p class="muted">No sensible pair here${last.rules.budget ? " within your budget" : ""}.</p></div>`; continue; }
+    any = true;
+    h += choiceCard(c, b, exp);
+  }
+  box.innerHTML = h;
+  box.querySelectorAll(".choice-head[data-b]").forEach(el => el.onclick = () => { openBand = openBand === el.dataset.b ? null : el.dataset.b; renderChoices(); renderSell(); });
+  box.querySelectorAll(".payoff-box").forEach(el => drawPayoff(el, JSON.parse(el.dataset.c)));
+  if (!any && last.rules.budget) box.insertAdjacentHTML("afterbegin", `<div class="banner warn">Nothing fits a budget of ₹${fmt0(last.rules.budget)}. Clear the budget box to see all choices.</div>`);
+}
+
+function choiceCard(c, b, exp) {
+  const open = openBand === b, nm = esc(last.index.name), lot = last.rules.lot_size;
+  const scen = c.scenarios.map(s => {
+    const v = Math.min(s.up_value, s.down_value), m = Math.min(s.up_mult, s.down_mult), gain = v - c.cost;
+    return `<div>±${s.move}% jump or crash<b>${rs(v)}</b>${m >= 1.05 ? `<span class="gain">${fmt(m, 1)}×</span><span class="gain">+${rs(gain)}</span>` : m >= 0.95 ? "about your money back" : `${fmt(m, 1)}×`}</div>`;
   }).join("");
-  $("plan").querySelectorAll("[data-exp]").forEach(b => b.onclick = () => {
-    selectExpiry(b.dataset.exp);
-    $("tabs").scrollIntoView({ behavior: "smooth", block: "start" });
+  const touch = c.p_touch, inN = touch > 0 ? Math.max(2, Math.round(1 / touch)) : null;
+  let h = `<div class="choice ${open ? "open" : ""}">
+    <div class="choice-head" data-b="${b}"><h3>${BAND[b].name}</h3><span class="tag">${BAND[b].tag}</span>
+      <span style="margin-left:auto" class="linkbtn">${open ? "Hide ▲" : "Details ▼"}</span></div>
+    <div class="pay">You pay ${rs(c.cost)}<small>the most you can lose</small></div>
+    <p class="plain">You make money if ${nm} ends <b>above ${fmt0(c.be_up)}</b> or <b>below ${fmt0(c.be_dn)}</b>${q("breakeven")}
+      by ${dshort(expIso(exp.expiry))}. That's <b>${sgn(c.be_up_pct)}%</b> or <b>${sgn(c.be_dn_pct)}%</b> from today.</p>
+    <div class="muted" style="margin-top:10px">If ${nm} jumps or crashes <b>within a week</b>, your two tickets would be worth about:</div>
+    <div class="what">${scen}</div>
+    <ul class="facts">
+      <li><span>If nothing happens, you lose about${q("decay")}</span><span>${rs(c.decay_per_day)} a day</span></li>
+      <li><span>Market's own estimate it reaches a profit line${q("chance")}</span><span>${fmt0(touch * 100)}%${inN ? `<br><span class="muted" style="font-weight:500">≈ 1 in ${inN}</span>` : ""}</span></li>
+    </ul>`;
+  if (open) {
+    const cd = { call: c.call.strike, put: c.put.strike, cost: c.cost, be_up: c.be_up, be_dn: c.be_dn, lot };
+    h += `
+    <div class="more">
+      <h3 style="font-size:15px">The picture: profit or loss on the end date</h3>
+      <div class="payoff-box" data-c='${JSON.stringify(cd)}'></div>
+      <div class="howto">
+        <b>How to buy this in your broker app</b> (prices as of ${esc(last.timestamp)})
+        <ol>
+          <li>Search <span class="contract">${contract(c.call, exp.expiry)}</span>, the up ticket${q("call")} with trigger ${fmt0(c.call.strike)}${q("strike")}.
+            Buy <b>1 lot</b>${q("lot")} (${lot} units) with a <b>limit order</b>${q("limit")} at about <b>₹${fmt(c.call.ask)}</b>.</li>
+          <li>Search <span class="contract">${contract(c.put, exp.expiry)}</span>, the down ticket${q("put")}.
+            Buy <b>1 lot</b> with a limit order at about <b>₹${fmt(c.put.ask)}</b>.</li>
+          <li>Total ≈ <b>${rs(c.cost)}</b> including estimated fees. If the price in your app is much higher, prices have moved: refresh here first.</li>
+        </ol>
+        <div class="muted">Sell price right now would be ₹${fmt(c.call.bid)} and ₹${fmt(c.put.bid)}${q("bidask")}. The gap is a small cost of trading.</div>
+      </div>
+      ${(exp.bands[b] || []).length > 1 ? `<details style="margin-top:10px"><summary class="linkbtn">Similar ${BAND[b].name.toLowerCase()} options</summary>
+        ${exp.bands[b].slice(1).map(o => `<div class="pick"><span>Up ${fmt0(o.call.strike)} + Down ${fmt0(o.put.strike)}</span><b>${rs(o.cost)}</b><span class="muted">profit lines ${fmt0(o.be_dn)} / ${fmt0(o.be_up)}</span></div>`).join("")}</details>` : ""}
+    </div>`;
+  }
+  return h + `</div>`;
+}
+
+// payoff picture: P/L at the end date across market levels
+function drawPayoff(box, c, S = last.spot, name = last.index.name) {
+  const W = box.clientWidth || 320, H = 190, m = { l: 8, r: 8, t: 16, b: 34 };
+  const span = Math.max(Math.abs(c.be_up / S - 1), Math.abs(c.be_dn / S - 1)) + 0.05;
+  const x0 = S * (1 - span), x1 = S * (1 + span);
+  const pl = x => c.lot * (Math.max(0, x - c.call) + Math.max(0, c.put - x)) - c.cost;
+  const yTop = Math.max(pl(x0), pl(x1), c.cost * 0.5), yBot = -c.cost * 1.35;
+  const X = v => m.l + (v - x0) / (x1 - x0) * (W - m.l - m.r), Y = v => m.t + (yTop - v) / (yTop - yBot) * (H - m.t - m.b);
+  const xs = [x0, c.put, c.call, x1, c.be_dn, c.be_up].sort((a, b) => a - b);
+  const pts = xs.map(x => [x, pl(x)]);
+  const area = (fn) => `M${X(x0)} ${Y(0)} ` + pts.map(([x, y]) => `L${X(x).toFixed(1)} ${Y(fn(y)).toFixed(1)}`).join(" ") + ` L${X(x1)} ${Y(0)} Z`;
+  const k = v => v >= 1000 ? (v / 1000).toFixed(v >= 100000 ? 0 : 1) + "k" : v.toFixed(0);
+  box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="Profit or loss at the end date by market level">
+    <path d="${area(y => Math.max(y, 0))}" fill="var(--good-fill)"/><path d="${area(y => Math.min(y, 0))}" fill="var(--bad-fill)"/>
+    <line x1="${m.l}" x2="${W - m.r}" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--text-3)"/>
+    <path d="${pts.map(([x, y], i) => (i ? "L" : "M") + X(x).toFixed(1) + " " + Y(y).toFixed(1)).join(" ")}" fill="none" stroke="var(--text)" stroke-width="2" stroke-linejoin="round"/>
+    <line x1="${X(S)}" x2="${X(S)}" y1="${m.t - 6}" y2="${H - m.b}" stroke="var(--accent)" stroke-dasharray="4 3"/>
+    <text x="${X(S)}" y="${m.t - 6}" text-anchor="middle" style="fill:var(--accent);font-weight:700">today ${k(S)}</text>
+    <text x="${X(S)}" y="${Y(-c.cost) + 16}" text-anchor="middle" style="fill:var(--bad);font-weight:700">lose ${rs(c.cost)}</text>
+    <text x="${X(c.be_dn)}" y="${H - m.b + 14}" text-anchor="middle">${k(c.be_dn)}</text>
+    <text x="${X(c.be_up)}" y="${H - m.b + 14}" text-anchor="middle">${k(c.be_up)}</text>
+    <text x="${X(c.be_dn)}" y="${H - m.b + 27}" text-anchor="middle" style="font-size:10px">profit line</text>
+    <text x="${X(c.be_up)}" y="${H - m.b + 27}" text-anchor="middle" style="font-size:10px">profit line</text>
+    <text x="${X(c.be_dn) - 8}" y="${Y(0) - 8}" text-anchor="end" style="fill:var(--good);font-weight:700">profit</text>
+    <text x="${X(c.be_up) + 8}" y="${Y(0) - 8}" text-anchor="start" style="fill:var(--good);font-weight:700">profit</text>
+    <circle id="dot" r="5" fill="var(--text)" stroke="var(--surface)" stroke-width="2" visibility="hidden"/>
+    <rect x="${m.l}" y="0" width="${W - m.l - m.r}" height="${H}" fill="transparent" style="touch-action:pan-y"/>
+  </svg><div class="readout muted">Tap or drag on the picture to see any level.</div>`;
+  const svg = box.querySelector("svg"), dot = svg.querySelector("#dot"), ro = box.querySelector(".readout");
+  const show = ev => {
+    const r = svg.getBoundingClientRect(), mx = (ev.clientX - r.left) * (W / r.width);
+    const x = Math.min(x1, Math.max(x0, x0 + (mx - m.l) / (W - m.l - m.r) * (x1 - x0))), v = pl(x);
+    dot.setAttribute("cx", X(x)); dot.setAttribute("cy", Y(v)); dot.setAttribute("visibility", "visible");
+    ro.className = "readout";
+    ro.innerHTML = `If ${esc(name)} ends at <b>${fmt0(x)}</b> (${sgn((x / S - 1) * 100)}%): ` +
+      (v >= 0 ? `<b style="color:var(--good)">you make ${rs(v)}</b>` : `<b style="color:var(--bad)">you lose ${rs(-v)}</b>`);
+  };
+  svg.addEventListener("pointermove", show); svg.addEventListener("pointerdown", show);
+}
+function drawGuidePic() {  // fixed example, independent of live data
+  const box = $("guidePic"); if (!box || box.dataset.done) return;
+  drawPayoff(box, { call: 66600, put: 55700, cost: 9534, be_up: 66910, be_dn: 55390, lot: 30 }, 60800, "Bank Nifty");
+  box.dataset.done = 1;
+}
+
+// ---------- step: sell plan ----------
+function renderSell() {
+  const p = upcoming()[evIdx], el = $("sell");
+  if (!p) { el.innerHTML = ""; return; }
+  const exp = p.expiry && expByName(p.expiry), c = exp && exp.bands && (exp.bands[openBand || "Mid"] || [])[0];
+  const cost = c ? c.cost : null, nm = esc(last.index.name);
+  el.innerHTML = `
+    <li><span class="ic">💰</span><div><b>If ${nm} jumps or crashes</b>: when your two tickets together are worth <b>3×</b>${q("multiple")} what you paid${cost ? ` (about ${rs(3 * cost)})` : ""}, sell <b>half</b>. At <b>5×</b>${cost ? ` (${rs(5 * cost)})` : ""}, sell the rest. Don't wait for "more". Big moves often reverse.</div></li>
+    <li><span class="ic">⏱</span><div><b>If nothing big happens</b>: sell both by <b>${dlong(p.exit_if_no_move)}</b>. Once the news is out, ticket prices usually drop. Selling early keeps part of your money.</div></li>
+    <li><span class="ic">🚫</span><div><b>No matter what</b>: sell everything by <b>${p.hard_exit ? dlong(p.hard_exit) : "a week before the end date"}</b>. In the last week tickets lose value fastest.</div></li>
+    <li><span class="ic">🧠</span><div><b>Never add more money</b> to a losing bet, and never bet money you can't afford to lose completely.</div></li>`;
+}
+
+// ---------- events ----------
+function renderEvents() {
+  const ups = upcoming();
+  $("events").innerHTML = ups.length ? ups.map((p, i) => {
+    const ph = phase(p);
+    return `<div class="ev ${i === evIdx ? "sel" : ""}" data-i="${i}">
+      <div class="evdate">${dshort(p.date)}<small>${D(p.date).toLocaleDateString("en-IN", { weekday: "short" })}</small></div>
+      <div><div class="evname">${esc(p.plain)}</div><div class="muted">Buy window ${dshort(p.entry_from)}–${dshort(p.entry_to)} · end date ${p.expiry ? eshort(p.expiry) : "not listed yet"}</div></div>
+      <span class="chip ${ph.k}">${ph.k === "wait" ? `in ${ph.n}d` : ph.k === "go" ? "open" : "now"}</span></div>`;
+  }).join("") : `<div class="placeholder">No upcoming news days in the calendar.</div>`;
+  $("events").querySelectorAll(".ev").forEach(el => el.onclick = () => {
+    evIdx = +el.dataset.i; renderToday(); renderChoices(); renderSell(); renderEvents();
+    $("today").scrollIntoView({ behavior: "smooth" });
   });
 }
 
-// ---------- expiry tabs & proposals ----------
-function renderTabs() {
-  $("tabs").innerHTML = last.expiries.map(e => `<button class="tab ${e.expiry === selExp ? "sel" : ""}" data-exp="${esc(e.expiry)}">
-    ${eshort(e.expiry)} · ${e.dte}d
-    <small>${e.skipped_reason ? "skipped" : e.catalysts.length ? "for " + esc(e.catalysts.join(", ")) : "no catalyst"}</small></button>`).join("");
-  $("tabs").querySelectorAll(".tab").forEach(b => b.onclick = () => selectExpiry(b.dataset.exp));
+// ---------- advanced: compare ----------
+async function runCompare() {
+  const btn = $("cmpBtn");
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Getting all three…';
+  try {
+    const p = params(false); p.delete("index"); p.delete("lot"); p.set("log", 0);
+    const d = await (await fetch("/api/compare?" + p)).json();
+    if (!d.ok) throw new Error(d.error);
+    const line = (b, x) => x ? `<div class="pick"><span class="bn">${BAND[b].name}</span><b>${rs(x.cost)}</b><span class="muted">±5% fast → ${fmt(x.score, 1)}×</span></div>` : `<div class="pick"><span class="bn">${BAND[b].name}</span><span class="muted">none</span></div>`;
+    $("cmp").innerHTML = `<div class="cmpgrid">${d.rows.map(r => r.error
+      ? `<div class="cmpcard"><h3>${esc(r.name)}</h3><div class="banner err">${esc(r.error)}</div></div>`
+      : `<div class="cmpcard"><h3>${esc(r.name)}</h3><div class="muted">${esc(r.event || "no event")} → ends ${r.expiry ? eshort(r.expiry) : "—"} · normal move ±${fmt(r.one_sigma_pct, 1)}% · a 5% move is ${fmt(5 / r.one_sigma_pct, 1)}× normal</div>
+         ${line("Near", r.best.Near)}${line("Mid", r.best.Mid)}${line("Far", r.best.Far)}</div>`).join("")}</div>
+      <p class="muted">Calmer markets show bigger "×" because a 5% move is rarer for them. A bigger number doesn't automatically mean a better bet.</p>
+      <button type="button" id="cmpBtn">Refresh comparison</button>`;
+    $("cmpBtn").onclick = runCompare;
+  } catch (e) {
+    $("err").hidden = false; $("err").textContent = e instanceof TypeError ? NOT_RUNNING : "Comparison failed:\n" + e.message;
+    btn.disabled = false; btn.textContent = "Compare all three";
+  }
 }
+$("cmpBtn").onclick = runCompare;
 
+// ---------- advanced: every end date ----------
+function renderTabs() {
+  $("tabs").innerHTML = last.expiries.map(e => `<button type="button" class="tab ${e.expiry === advExp ? "sel" : ""}" data-exp="${esc(e.expiry)}">
+    ${eshort(e.expiry)} · ${e.dte}d<small>${e.skipped_reason ? "too soon" : e.catalysts.length ? "for " + esc(e.catalysts.join(", ")) : "no news day"}</small></button>`).join("");
+  $("tabs").querySelectorAll(".tab").forEach(b => b.onclick = () => { advExp = b.dataset.exp; advCombo = null; renderTabs(); renderExpiry(); drawChart(); renderChain(); });
+}
 function renderExpiry() {
-  const e = expByName(selExp);
-  if (!e) return;
+  const e = expByName(advExp); if (!e) return;
   if (e.skipped_reason) { $("expPanel").innerHTML = `<div class="banner warn">${esc(e.skipped_reason)}</div>`; return; }
-  const z = e.zone, exs = e.excluded_examples["too far (unrealistic)"];
-  const rej = Object.entries(e.excluded).map(([k, n]) => `${n} ${k}`).join(" · ");
-  let h = `
-    <div class="summary">
-      <div>Days left<b>${e.dte}</b></div>
-      <div>At-the-money IV<b>${fmt(e.atm_iv * 100, 1)}%</b></div>
-      <div>Expected move (1σ)<b>±${fmt(e.one_sigma_pct, 1)}%</b></div>
-      <div>Combinations checked<b>${fmt0(e.n_combos_total)}</b></div>
-    </div>
-    <div class="muted">Allowed zone: calls ${fmt0(z.call_from)}–${fmt0(z.call_to)} · puts ${fmt0(z.put_to)}–${fmt0(z.put_from)}
-      (${last.rules.min_sigma}σ–${last.rules.max_sigma}σ from spot). Rejected strikes: ${esc(rej) || "none"}.
-      ${exs ? `Example of what's rejected: ${exs.opt} ${fmt0(exs.strike)} at ₹${fmt(exs.price)} is ${sgn(exs.dist_pct)}% away (${fmt(Math.abs(exs.sigma), 1)}σ), unrealistic for this expiry.` : ""}</div>`;
-  h += e.catalysts.length
-    ? `<div class="banner ok">Planned for: <b>${esc(e.catalysts.join(", "))}</b>. Enter only in that event's window (see plan above).</div>`
-    : `<div class="banner warn"><b>No catalyst for this expiry.</b> No scheduled event falls early enough before it. Buying here mostly pays time decay. Shown for reference.</div>`;
-  if (last.rules.budget) h += `<div class="muted">Showing only pairs costing ≤ ₹${fmt0(last.rules.budget)}.</div>`;
-  for (const bd of last.bands_def) {
-    const list = e.bands[bd.name] || [];
-    const to = Math.min(bd.to, last.rules.max_sigma), from = Math.max(bd.from, last.rules.min_sigma);
-    h += `<div class="band"><div class="band-head"><h3>${bd.name}</h3><span class="chip">${fmt(from, 2)}–${fmt(to, 2)}σ</span></div>
-      <div class="band-note">${esc(last.band_notes[bd.name])}</div>
-      ${list.length ? `<div class="props">${propCard(list[0], bd.name, 0)}</div>${list.length > 1 ? `<details class="moreprops"><summary class="linkbtn">${list.length - 1} more ${bd.name} option${list.length > 2 ? "s" : ""}</summary>
-        <div class="props" style="margin-top:10px">${list.slice(1).map((c, i) => propCard(c, bd.name, i + 1)).join("")}</div></details>` : ""}`
-        : `<div class="muted">No tradeable pair in this band${last.rules.budget ? " within your budget" : ""}.</div>`}</div>`;
+  const exs = e.excluded_examples["too far (unrealistic)"];
+  let h = `<p class="muted">Market nervousness${q("iv")} ${fmt(e.atm_iv * 100, 1)}% · normal move ±${fmt(e.one_sigma_pct, 1)}% · ${fmt0(e.n_combos_total)} pairs checked.
+    Ignored: ${Object.entries(e.excluded).map(([k, n]) => `${n} ${esc(k)}`).join(", ") || "none"}.
+    ${exs ? `Example ignored: ${exs.opt === "CE" ? "up" : "down"} ticket at ${fmt0(exs.strike)} (${sgn(exs.dist_pct)}%, ${fmt(Math.abs(exs.sigma), 1)}σ${q("sigma")}), far too unlikely.` : ""}</p>`;
+  if (!e.catalysts.length) h += `<div class="banner warn">No news day before this end date. Buying here mostly pays daily decay.</div>`;
+  for (const b of ["Near", "Mid", "Far"]) {
+    const list = e.bands[b] || [];
+    h += `<div style="margin-top:10px"><b>${BAND[b].name}</b> <span class="muted">${BAND[b].tag}</span>${list.map((c, i) =>
+      `<div class="pick" data-k="${b}:${i}" style="cursor:pointer"><span>Up ${fmt0(c.call.strike)} @₹${fmt(c.call.ask)} + Down ${fmt0(c.put.strike)} @₹${fmt(c.put.ask)}</span><b>${rs(c.cost)}</b>
+        <span class="muted">±5% → ${fmt(c.score, 1)}× · ${fmt0(c.p_touch * 100)}% chance · −${rs(c.decay_per_day).replace("₹", "₹")}/day</span></div>`).join("") || `<div class="muted">none</div>`}</div>`;
   }
   $("expPanel").innerHTML = h;
-  if (!selCombo) selCombo = bestOf(e, "Mid") || bestOf(e, "Far") || bestOf(e, "Near");
-  $("expPanel").querySelectorAll(".prop").forEach(el => {
-    const [b, i] = el.dataset.k.split(":");
-    el.classList.toggle("sel", e.bands[b][+i] === selCombo);
-    el.onclick = () => {
-      selCombo = e.bands[b][+i];
-      $("expPanel").querySelectorAll(".prop").forEach(x => x.classList.toggle("sel", x === el));
-      drawChart(); renderChain();
-    };
+  $("expPanel").querySelectorAll("[data-k]").forEach(el => el.onclick = () => {
+    const [b, i] = el.dataset.k.split(":"); advCombo = e.bands[b][+i]; drawChart(); renderChain();
   });
 }
-
-function legRow(l, color) {
-  return `<div class="legrow"><span class="sw" style="background:${color}"></span>
-    <span><b>${l.opt} ${fmt0(l.strike)}</b> <span class="muted">${sgn(l.dist_pct)}% · ${fmt(Math.abs(l.sigma), 2)}σ · IV ${fmt(l.iv * 100, 1)}%</span></span>
-    <span>₹${fmt(l.ask)} <span class="muted">(bid ${fmt(l.bid)})</span></span></div>`;
-}
-function propCard(c, band, i) {
-  const sc = c.scenarios.map(s => {
-    const m = Math.min(s.up_mult, s.down_mult), v = Math.min(s.up_value, s.down_value);
-    return `<div>±${s.move}% within a week<b>${fmt(m, 1)}×</b>≈ ₹${fmt0(v)}</div>`;
-  }).join("");
-  return `<div class="prop" data-k="${band}:${i}">
-    <div class="prop-legs">CE ${fmt0(c.call.strike)} + PE ${fmt0(c.put.strike)}</div>
-    <div class="prop-cost">₹${fmt0(c.cost)} <span class="muted" style="font-weight:500">per pair (1 lot each) = max loss</span></div>
-    ${legRow(c.call, "var(--call)")}${legRow(c.put, "var(--put)")}
-    <div class="scen">${sc}</div>
-    <div class="muted" style="margin-top:4px">Worth after the move (the weaker direction). 1× = break even.</div>
-    <dl class="kv">
-      <dt>Breakevens at expiry</dt><dd>${fmt0(c.be_dn)} / ${fmt0(c.be_up)}</dd>
-      <dt>Move needed</dt><dd>${sgn(c.be_dn_pct)}% / ${sgn(c.be_up_pct)}%</dd>
-      <dt>Market-implied chance a breakeven is touched</dt><dd>${fmt0(c.p_touch * 100)}%</dd>
-      <dt>Decay per day if nothing moves</dt><dd>−₹${fmt0(c.decay_per_day)}</dd>
-    </dl>
-  </div>`;
-}
-
-// ---------- chart ----------
 function drawChart() {
-  const e = expByName(selExp), svg = $("chart"), box = $("chartBox"), tip = $("tip");
-  $("chartExp").textContent = e ? eshort(e.expiry) : "";
+  const e = expByName(advExp), svg = $("chart"), box = $("chartBox"), tip = $("tip");
+  $("chartExp").textContent = e ? "ends " + eshort(e.expiry) : "";
   if (!e || e.skipped_reason || !e.zone.call_to) { svg.innerHTML = ""; return; }
-  const S = last.spot, z = e.zone;
-  const W = box.clientWidth || 600, H = 320, m = { l: 50, r: 14, t: 14, b: 30 };
+  const S = last.spot, z = e.zone, sel = advCombo || (e.bands.Mid || [])[0];
+  const W = box.clientWidth || 600, H = 300, m = { l: 50, r: 14, t: 14, b: 30 };
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   const lo = z.put_to - (z.put_from - z.put_to) * 0.35, hi = z.call_to + (z.call_to - z.call_from) * 0.35;
   const px = (r, s) => r[s + "_ask"] > 0 ? r[s + "_ask"] : (r[s + "_ltp"] > 0 ? r[s + "_ltp"] : null);
   const ce = e.chain.filter(r => r.strike > S && r.strike <= hi && px(r, "ce")).map(r => [r.strike, px(r, "ce")]);
   const pe = e.chain.filter(r => r.strike < S && r.strike >= lo && px(r, "pe")).map(r => [r.strike, px(r, "pe")]);
-  const all = ce.concat(pe);
-  if (!all.length) { svg.innerHTML = ""; return; }
-  const x0 = Math.min(lo, ...all.map(p => p[0])), x1 = Math.max(hi, ...all.map(p => p[0]));
-  const ys = all.map(p => p[1]);
+  const all = ce.concat(pe); if (!all.length) { svg.innerHTML = ""; return; }
+  const x0 = Math.min(lo, ...all.map(p => p[0])), x1 = Math.max(hi, ...all.map(p => p[0])), ys = all.map(p => p[1]);
   const yMin = Math.max(0.05, Math.min(...ys) * 0.8), yMax = Math.max(...ys) * 1.2, L = Math.log10;
   const X = v => m.l + (v - x0) / (x1 - x0) * (W - m.l - m.r);
   const Y = v => m.t + (1 - (L(Math.max(v, yMin)) - L(yMin)) / (L(yMax) - L(yMin))) * (H - m.t - m.b);
@@ -501,114 +775,61 @@ function drawChart() {
            <rect x="${X(z.put_to)}" y="${m.t}" width="${X(z.put_from) - X(z.put_to)}" height="${H - m.t - m.b}" fill="var(--zone)"/>`;
   for (let k = Math.floor(L(yMin)); k <= Math.ceil(L(yMax)); k++) for (const f of [1, 2, 5]) {
     const v = f * 10 ** k; if (v < yMin || v > yMax) continue;
-    g += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--grid)"/>
-          <text x="${m.l - 6}" y="${Y(v) + 4}" text-anchor="end">₹${v >= 1 ? v : v.toFixed(1)}</text>`;
+    g += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--grid)"/><text x="${m.l - 6}" y="${Y(v) + 4}" text-anchor="end">₹${v >= 1 ? v : v.toFixed(1)}</text>`;
   }
-  const pxPer = (W - m.l - m.r) / (x1 - x0), step = [1000, 2000, 5000, 10000].find(s => s * pxPer >= 48) || 10000;
-  for (let v = Math.ceil(x0 / step) * step; v <= x1; v += step) g += `<text x="${X(v)}" y="${H - 10}" text-anchor="middle">${(v / 1000).toFixed(0)}k</text>`;
-  g += `<line x1="${X(S)}" x2="${X(S)}" y1="${m.t}" y2="${H - m.b}" stroke="var(--text-3)" stroke-dasharray="4 4"/>
-        <text x="${X(S) + 4}" y="${m.t + 10}">spot ${fmt0(S)}</text>`;
+  const pxPer = (W - m.l - m.r) / (x1 - x0), step = [500, 1000, 2000, 5000, 10000].find(s => s * pxPer >= 48) || 10000;
+  for (let v = Math.ceil(x0 / step) * step; v <= x1; v += step) g += `<text x="${X(v)}" y="${H - 10}" text-anchor="middle">${(v / 1000).toFixed(v % 1000 ? 1 : 0)}k</text>`;
+  g += `<line x1="${X(S)}" x2="${X(S)}" y1="${m.t}" y2="${H - m.b}" stroke="var(--text-3)" stroke-dasharray="4 4"/><text x="${X(S) + 4}" y="${m.t + 10}">today ${fmt0(S)}</text>`;
   const path = pts => pts.map((p, i) => (i ? "L" : "M") + X(p[0]).toFixed(1) + " " + Y(p[1]).toFixed(1)).join("");
-  g += `<path d="${path(ce)}" fill="none" stroke="var(--call)" stroke-width="2" stroke-linejoin="round"/>
-        <path d="${path(pe)}" fill="none" stroke="var(--put)" stroke-width="2" stroke-linejoin="round"/>`;
-  if (selCombo && selCombo.expiry === e.expiry) for (const [l, c] of [[selCombo.call, "var(--call)"], [selCombo.put, "var(--put)"]]) {
+  g += `<path d="${path(ce)}" fill="none" stroke="var(--call)" stroke-width="2"/><path d="${path(pe)}" fill="none" stroke="var(--put)" stroke-width="2"/>`;
+  if (sel) for (const [l, c] of [[sel.call, "var(--call)"], [sel.put, "var(--put)"]]) {
     const cx = X(l.strike), cy = Y(l.ask), txt = `₹${fmt(l.ask)}`, tw = txt.length * 6.6;
     let anchor = l.opt === "CE" ? "start" : "end", dx = l.opt === "CE" ? 8 : -8;
     if (l.opt === "CE" && cx + 8 + tw > W - m.r) { anchor = "end"; dx = -8; }
     if (l.opt === "PE" && cx - 8 - tw < m.l) { anchor = "start"; dx = 8; }
-    g += `<circle cx="${cx}" cy="${cy}" r="5.5" fill="${c}" stroke="var(--surface)" stroke-width="2"/>
-          <text x="${cx + dx}" y="${cy + 18}" text-anchor="${anchor}" style="fill:var(--text);font-weight:600">${txt}</text>`;
+    g += `<circle cx="${cx}" cy="${cy}" r="5.5" fill="${c}" stroke="var(--surface)" stroke-width="2"/><text x="${cx + dx}" y="${cy + 18}" text-anchor="${anchor}" style="fill:var(--text);font-weight:600">${txt}</text>`;
   }
-  g += `<line id="xh" y1="${m.t}" y2="${H - m.b}" stroke="var(--text-2)" visibility="hidden"/>
-        <rect id="hit" x="${m.l}" y="${m.t}" width="${W - m.l - m.r}" height="${H - m.t - m.b}" fill="transparent"/>`;
+  g += `<line id="xh" y1="${m.t}" y2="${H - m.b}" stroke="var(--text-2)" visibility="hidden"/><rect id="hit" x="${m.l}" y="${m.t}" width="${W - m.l - m.r}" height="${H - m.t - m.b}" fill="transparent"/>`;
   svg.innerHTML = g;
   const rows = e.chain.filter(r => r.strike >= x0 && r.strike <= x1 && r.strike !== S), hit = svg.querySelector("#hit"), xh = svg.querySelector("#xh");
-  const sig = k => Math.log(k / S) / (e.atm_iv * Math.sqrt(e.dte / 365));
+  const unit = e.atm_iv * Math.sqrt(e.dte / 365);
   hit.onmouseleave = () => { tip.style.display = "none"; xh.setAttribute("visibility", "hidden"); };
-  hit.onmousemove = ev => {
-    const rect = svg.getBoundingClientRect(), mx = (ev.clientX - rect.left) * (W / rect.width);
-    const sv = x0 + (mx - m.l) / (W - m.l - m.r) * (x1 - x0);
-    const r = rows.reduce((a, b) => Math.abs(b.strike - sv) < Math.abs(a.strike - sv) ? b : a);
-    const sx = X(r.strike), side = r.strike > S ? "ce" : "pe";
+  hit.onpointermove = ev => {
+    const rect = svg.getBoundingClientRect(), mx = (ev.clientX - rect.left) * (W / rect.width), sv = x0 + (mx - m.l) / (W - m.l - m.r) * (x1 - x0);
+    const r = rows.reduce((a, b) => Math.abs(b.strike - sv) < Math.abs(a.strike - sv) ? b : a), sx = X(r.strike), side = r.strike > S ? "ce" : "pe";
     xh.setAttribute("x1", sx); xh.setAttribute("x2", sx); xh.setAttribute("visibility", "visible");
-    const zz = Math.abs(sig(r.strike)), R = last.rules;
-    tip.innerHTML = `<b>${side.toUpperCase()} ${fmt0(r.strike)}</b> <span class="muted">${sgn((r.strike - S) / S * 100)}% · ${fmt(zz, 2)}σ</span>
-      <div>Ask ₹${fmt(r[side + "_ask"])} · bid ₹${fmt(r[side + "_bid"])} · LTP ₹${fmt(r[side + "_ltp"])}</div>
-      <div>OI ${fmt0(r[side + "_oi"])} · vol ${fmt0(r[side + "_vol"])}</div>
-      <div class="muted">${zz > R.max_sigma ? "too far — unrealistic" : zz < R.min_sigma ? "too close — expensive" : "inside allowed zone"}</div>`;
+    const zz = Math.abs(Math.log(r.strike / S) / unit), R = last.rules;
+    tip.innerHTML = `<b>${side === "ce" ? "Up" : "Down"} ticket ${fmt0(r.strike)}</b> <span class="muted">${sgn((r.strike - S) / S * 100)}%</span>
+      <div>Buy at ₹${fmt(r[side + "_ask"])} · sell at ₹${fmt(r[side + "_bid"])}</div>
+      <div class="muted">${zz > R.max_sigma ? "too far — unrealistic" : zz < R.min_sigma ? "too close — expensive" : "inside sensible range"}</div>`;
     tip.style.display = "block";
-    tip.style.left = Math.max(0, Math.min(sx / W * rect.width + 12, rect.width - tip.offsetWidth - 4)) + "px";
-    tip.style.top = "16px";
+    tip.style.left = Math.max(0, Math.min(sx / W * rect.width + 12, rect.width - tip.offsetWidth - 4)) + "px"; tip.style.top = "16px";
   };
 }
-window.addEventListener("resize", () => last && drawChart());
-
-// ---------- chain table ----------
+window.addEventListener("resize", () => { if (last) { drawChart(); document.querySelectorAll(".payoff-box").forEach(el => drawPayoff(el, JSON.parse(el.dataset.c))); } });
 function renderChain() {
-  const e = expByName(selExp);
-  $("tblExp").textContent = e ? eshort(e.expiry) : "";
-  if (!e) return;
-  const S = last.spot, unit = e.atm_iv ? e.atm_iv * Math.sqrt(e.dte / 365) : null, R = last.rules;
+  const e = expByName(advExp); if (!e) return;
+  const S = last.spot, unit = e.atm_iv ? e.atm_iv * Math.sqrt(e.dte / 365) : null, R = last.rules, sel = advCombo || (e.bands.Mid || [])[0];
   const body = e.chain.map((r, i) => {
     const nxt = e.chain[i + 1], zz = unit ? Math.log(r.strike / S) / unit : null, cls = [];
     if (zz != null && Math.abs(zz) >= R.min_sigma && Math.abs(zz) <= R.max_sigma) cls.push("inzone");
-    if (selCombo && selCombo.expiry === e.expiry && (r.strike === selCombo.call.strike || r.strike === selCombo.put.strike)) cls.push("hl");
+    if (sel && (r.strike === sel.call.strike || r.strike === sel.put.strike)) cls.push("hl");
     if (r.strike < S && nxt && nxt.strike >= S) cls.push("atm");
-    return `<tr class="${cls.join(" ")}"><td>${fmt0(r.ce_oi)}</td><td>${fmt0(r.ce_vol)}</td><td>${fmt(r.ce_ltp)}</td><td>${fmt(r.ce_ask)}</td>
-      <td class="strike">${fmt0(r.strike)}</td><td>${zz == null ? "—" : fmt(zz, 2)}</td>
-      <td>${fmt(r.pe_ask)}</td><td>${fmt(r.pe_ltp)}</td><td>${fmt0(r.pe_vol)}</td><td>${fmt0(r.pe_oi)}</td></tr>`;
+    return `<tr class="${cls.join(" ")}"><td>${fmt0(r.ce_oi)}</td><td>${fmt(r.ce_bid)}</td><td>${fmt(r.ce_ask)}</td><td class="strike">${fmt0(r.strike)}</td><td>${fmt(r.pe_ask)}</td><td>${fmt(r.pe_bid)}</td><td>${fmt0(r.pe_oi)}</td></tr>`;
   }).join("");
-  $("chainTbl").innerHTML = `<table><thead><tr><th>CE OI</th><th>CE Vol</th><th>CE LTP</th><th>CE Ask</th><th style="text-align:center">Strike</th><th>σ</th>
-    <th>PE Ask</th><th>PE LTP</th><th>PE Vol</th><th>PE OI</th></tr></thead><tbody>${body}</tbody></table>
-    <div class="muted" style="padding:6px 2px">Blue edge = inside allowed zone. Thick rule = spot. Highlighted = selected proposal.</div>`;
+  $("chainTbl").innerHTML = `<table><thead><tr><th>Up: open int.</th><th>Up: sell at</th><th>Up: buy at</th><th style="text-align:center">Trigger</th><th>Down: buy at</th><th>Down: sell at</th><th>Down: open int.</th></tr></thead><tbody>${body}</tbody></table>
+    <p class="muted">Thick line = today's level. Blue edge = sensible range. Bold = selected pair.</p>`;
 }
-
-// ---------- history ----------
 async function loadHistory() {
   try {
     const { rows } = await (await fetch("/api/history")).json();
     if (!rows.length) return;
     const n = v => v === "" || v == null ? null : +v;
-    $("histTbl").innerHTML = `<table><thead><tr><th style="text-align:left">Scanned</th><th>Index</th><th>Expiry</th><th>DTE</th><th>Spot</th>
-      <th>ATM IV</th><th>1σ move</th><th>Best Near ₹</th><th>Best Mid ₹</th><th>Best Far ₹</th></tr></thead><tbody>${
-      rows.map(r => `<tr><td style="text-align:left">${esc((r.fetched_at || "").replace("T", " "))}</td><td>${esc(cfg.indices[r.index] ? cfg.indices[r.index].name : (r.index || "—"))}</td><td>${esc(r.expiry)}</td><td>${esc(r.dte)}</td>
-        <td>${fmt0(n(r.spot))}</td><td>${r.atm_iv ? fmt(+r.atm_iv, 1) + "%" : "—"}</td><td>${r.one_sigma_pct ? "±" + fmt(+r.one_sigma_pct, 1) + "%" : "—"}</td>
-        <td>${fmt0(n(r.near_cost))}</td><td>${fmt0(n(r.mid_cost))}</td><td>${fmt0(n(r.far_cost))}</td></tr>`).join("")
-    }</tbody></table><div class="muted" style="padding:6px 2px">Latest first. If ATM IV for your planned expiry falls before the event, entry gets cheaper.</div>`;
+    $("histTbl").innerHTML = `<table><thead><tr><th style="text-align:left">When</th><th>Market</th><th>End date</th><th>Level</th><th>Nervousness</th><th>Closer ₹</th><th>Middle ₹</th><th>Farther ₹</th></tr></thead><tbody>${
+      rows.map(r => `<tr><td style="text-align:left">${esc((r.fetched_at || "").replace("T", " ").slice(0, 16))}</td><td>${esc(cfg.indices[r.index] ? cfg.indices[r.index].name : r.index || "—")}</td><td>${esc(r.expiry)}</td>
+        <td>${fmt0(n(r.spot))}</td><td>${r.atm_iv ? fmt(+r.atm_iv, 1) + "%" : "—"}</td><td>${fmt0(n(r.near_cost))}</td><td>${fmt0(n(r.mid_cost))}</td><td>${fmt0(n(r.far_cost))}</td></tr>`).join("")}</tbody></table>`;
   } catch (e) {}
 }
-
-// ---------- compare indices ----------
-async function runCompare() {
-  const btn = $("cmpBtn");
-  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Scanning all three…';
-  try {
-    const p = params(false); p.delete("index"); p.delete("lot"); p.set("log", 0);
-    const d = await (await fetch("/api/compare?" + p)).json();
-    if (!d.ok) throw new Error(d.error);
-    const line = (name, b) => b ? `<div class="pick"><span class="bn">${name}</span><span>CE ${fmt0(b.call)} + PE ${fmt0(b.put)}</span>
-        <b>₹${fmt0(b.cost)}</b><span class="muted">±5% fast → ${fmt(b.score, 1)}×</span></div>` : `<div class="pick"><span class="bn">${name}</span><span class="muted">no tradeable pair</span></div>`;
-    $("cmp").innerHTML = `<div class="cmpgrid">${d.rows.map(r => r.error
-      ? `<div class="cmpcard"><h3>${esc(r.name)}</h3><div class="banner err" style="margin:8px 0 0">${esc(r.error)}</div></div>`
-      : `<div class="cmpcard"><div class="step-head"><h3>${esc(r.name)}</h3><span class="muted">${fmt0(r.spot)} · lot ${r.lot}</span></div>
-          <div class="muted" style="margin:2px 0 8px">${esc(r.event || "no upcoming event")} → ${r.expiry ? eshort(r.expiry) + " expiry (" + r.dte + "d)" : "no expiry yet"}
-            · ATM IV ${r.atm_iv ? fmt(r.atm_iv * 100, 1) + "%" : "—"} · 1σ ±${fmt(r.one_sigma_pct, 1)}% · a 5% move = ${r.one_sigma_pct ? fmt(5 / r.one_sigma_pct, 1) : "—"}σ</div>
-          <div class="picks">${line("Near", r.best.Near)}${line("Mid", r.best.Mid)}${line("Far", r.best.Far)}</div>
-          <button type="button" class="linkbtn" data-ix="${r.index}">Open ${esc(r.name)} plan →</button></div>`).join("")}</div>
-    <div class="muted" style="margin-top:6px">Costs are per pair at each index's own lot size. Compare the "5% = σ" column too: in a calmer index a 5% move is rarer, so its bigger multiple partly reflects a less likely move.</div>
-    <button type="button" id="cmpBtn" style="margin-top:10px">Refresh comparison</button>`;
-    $("cmpBtn").onclick = runCompare;
-    $("cmp").querySelectorAll("[data-ix]").forEach(b => b.onclick = () => {
-      const t = $("indexSeg").querySelector(`[data-ix="${b.dataset.ix}"]`);
-      if (b.dataset.ix === INDEX) { $("plan").scrollIntoView({ behavior: "smooth" }); return; }
-      t.click(); window.scrollTo({ top: 0, behavior: "smooth" });
-    });
-  } catch (e) {
-    showErr(e instanceof TypeError ? NOT_RUNNING : "Comparison failed:\n" + e.message);
-    btn.disabled = false; btn.textContent = "Compare all three";
-  }
-}
-$("cmpBtn").onclick = runCompare;
 
 init();
 </script>

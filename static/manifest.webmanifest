@@ -1,6 +1,6 @@
 {
-  "name": "Index Strangle Planner",
-  "short_name": "Strangle",
+  "name": "Big-Move Planner",
+  "short_name": "Big-Move",
   "description": "Read-only strangle planner for Bank Nifty, Nifty 50 and Sensex",
   "start_url": "/",
   "scope": "/",

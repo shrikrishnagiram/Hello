@@ -10,11 +10,14 @@ from datetime import date, datetime
 
 INDICES = {
     "BANKNIFTY": {"name": "Bank Nifty", "exchange": "NSE", "symbol": "BANKNIFTY", "lot": 30,
-                  "expiries": "monthly (last Tuesday)"},
+                  "expiries": "monthly (last Tuesday)",
+                  "about": "The 12 biggest bank shares. Moves the most of the three, and reacts strongly to interest-rate news."},
     "NIFTY": {"name": "Nifty 50", "exchange": "NSE", "symbol": "NIFTY", "lot": 65,
-              "expiries": "weekly (Tuesday) + monthly"},
+              "expiries": "weekly (Tuesday) + monthly",
+              "about": "India's 50 biggest companies, the main market index. Calmer than Bank Nifty."},
     "SENSEX": {"name": "Sensex", "exchange": "BSE", "symbol": "SENSEX", "lot": 20,
-               "expiries": "weekly (Thursday) + monthly"},
+               "expiries": "weekly (Thursday) + monthly",
+               "about": "30 big companies, traded on BSE. Moves very much like Nifty 50."},
 }
 DEFAULT_INDEX = "BANKNIFTY"
 
