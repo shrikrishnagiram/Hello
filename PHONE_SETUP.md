@@ -16,8 +16,7 @@ Open Termux, paste this line, and press Enter:
 pkg install -y git && git clone -b ccr-e3df3d29-cy21k0 https://github.com/shrikrishnagiram/Hello.git ~/Hello && bash ~/Hello/termux/install.sh
 ```
 
-If it asks a question, press Enter to accept the default. When it says **Done**, close
-Termux completely and reopen it.
+When it says **Done**, the scanner is installed.
 
 ## 3. Start it
 In Termux type:
@@ -26,7 +25,8 @@ In Termux type:
 scanner
 ```
 
-Chrome opens the scanner. To try it outside market hours with made-up prices, type `scanner-demo`
+Chrome opens the scanner. If Termux says `No command scanner found`, run
+`git -C ~/Hello pull && bash ~/Hello/termux/install.sh` once and try again. To try it outside market hours with made-up prices, type `scanner-demo`
 instead.
 
 ## 4. Make it an app icon (one time)

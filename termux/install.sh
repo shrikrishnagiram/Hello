@@ -1,12 +1,16 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # One-time setup of the Bank Nifty Strangle Scanner inside Termux (Android).
-# Safe to re-run: it updates the code and rewrites the shortcuts.
+# Safe to re-run: it updates the code and rewrites the commands/shortcuts.
+# Everything is inside main() so bash reads the whole script before running it
+# (the script updates its own file via git).
+main() {
 set -e
 REPO_URL="https://github.com/shrikrishnagiram/Hello.git"
 BRANCH="${BRANCH:-ccr-e3df3d29-cy21k0}"
 APP_DIR="$HOME/Hello"
+BIN="${PREFIX:-/data/data/com.termux/files/usr}/bin"
 
-echo "==> Installing Python, git and helpers (this can take 5-10 minutes)..."
+echo "==> Installing Python, git and helpers (first time: 5-10 minutes)..."
 # Never stop to ask about config files: keep the existing ones.
 export DEBIAN_FRONTEND=noninteractive
 APT_OPTS="-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold"
@@ -25,23 +29,23 @@ else
 fi
 mkdir -p "$APP_DIR/data"
 
-echo "==> Creating shortcuts..."
+echo "==> Creating commands and shortcuts..."
+# Real commands on PATH -- work immediately, no need to reopen Termux.
+make_cmd() { printf '#!/data/data/com.termux/files/usr/bin/bash\n%s\n' "$2" > "$BIN/$1"; chmod +x "$BIN/$1"; }
+make_cmd scanner        'exec bash "$HOME/Hello/termux/start.sh" "$@"'
+make_cmd scanner-demo   'SCANNER_DEMO=1 exec bash "$HOME/Hello/termux/start.sh" "$@"'
+make_cmd scanner-stop   'exec bash "$HOME/Hello/termux/stop.sh"'
+make_cmd scanner-update 'exec bash "$HOME/Hello/termux/install.sh"'
+# Remove aliases written by older versions of this installer.
+[ -f "$HOME/.bashrc" ] && sed -i '/# strangle-scanner$/d' "$HOME/.bashrc"
+
+# Termux:Widget home-screen shortcuts (optional app)
 mkdir -p "$HOME/.shortcuts"
-cp "$APP_DIR/termux/start.sh" "$HOME/.shortcuts/Strangle Scanner"
-cp "$APP_DIR/termux/stop.sh"  "$HOME/.shortcuts/Stop Scanner"
+printf '#!/data/data/com.termux/files/usr/bin/bash\nexec bash "$HOME/Hello/termux/start.sh"\n' > "$HOME/.shortcuts/Strangle Scanner"
+printf '#!/data/data/com.termux/files/usr/bin/bash\nexec bash "$HOME/Hello/termux/stop.sh"\n'  > "$HOME/.shortcuts/Stop Scanner"
 chmod +x "$HOME/.shortcuts/Strangle Scanner" "$HOME/.shortcuts/Stop Scanner"
 
-# Commands you can type in Termux
-BASHRC="$HOME/.bashrc"
-touch "$BASHRC"
-sed -i '/# strangle-scanner$/d' "$BASHRC"
-cat >> "$BASHRC" <<'RC'
-alias scanner='bash "$HOME/.shortcuts/Strangle Scanner"' # strangle-scanner
-alias scanner-stop='bash "$HOME/.shortcuts/Stop Scanner"' # strangle-scanner
-alias scanner-demo='SCANNER_DEMO=1 bash "$HOME/.shortcuts/Strangle Scanner"' # strangle-scanner
-alias scanner-update='bash "$HOME/Hello/termux/install.sh"' # strangle-scanner
-RC
-
 echo
-echo "Done. Close and reopen Termux, then type:   scanner"
-echo "(Or add the Termux:Widget to your home screen and tap 'Strangle Scanner'.)"
+echo "Done. Now type:   scanner"
+}
+main "$@"
