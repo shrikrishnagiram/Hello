@@ -231,24 +231,28 @@ def _sorted_expiries(exps, today=None) -> list[str]:
     return [e for _, e in sorted(set(out))]
 
 
-def fetch_all_expiries(source: str = "auto", max_expiries: int = 4) -> list[tuple[str, dict, str]]:
-    """Fetch the nearest `max_expiries` expiries. Returns [(expiry, json, source)].
+def fetch_all_expiries(source: str = "auto", symbol: str = SYMBOL,
+                       choose=None) -> list[tuple[str, dict, str]]:
+    """Fetch the chosen expiries of an NSE index. Returns [(expiry, json, source)].
 
-    Order: NSE contract-info + v3 per expiry -> NSE legacy (all expiries in one call)
-    -> nsepython. Partial results are returned if at least one expiry loads.
+    `choose(list_of_expiries) -> subset` decides which expiries to load (default:
+    the nearest 4). Order: NSE contract-info + v3 per expiry -> NSE legacy (all
+    expiries in one call) -> nsepython. Partial results are returned if at least
+    one expiry loads.
     """
+    choose = choose or (lambda exps: exps[:4])
     errors = []
     if source in ("auto", "nse"):
         session = _nse_session()
         try:
-            info = _get_json(session, NSE_INFO_URL, {"symbol": SYMBOL})
-            exps = _sorted_expiries(info.get("expiryDates"))[:max_expiries]
+            info = _get_json(session, NSE_INFO_URL, {"symbol": symbol})
+            exps = choose(_sorted_expiries(info.get("expiryDates")))
             if not exps:
                 raise ChainError("contract-info returned no upcoming expiries")
             out = []
             for e in exps:
                 try:
-                    data = _get_json(session, NSE_V3_URL, {"type": "Indices", "symbol": SYMBOL, "expiry": e})
+                    data = _get_json(session, NSE_V3_URL, {"type": "Indices", "symbol": symbol, "expiry": e})
                     out.append((e, data, "nse-v3"))
                 except ChainError as ex:
                     errors.append(f"{e}: {ex}")
@@ -258,8 +262,8 @@ def fetch_all_expiries(source: str = "auto", max_expiries: int = 4) -> list[tupl
         except ChainError as ex:
             errors.append(str(ex))
         try:
-            data = _get_json(session, NSE_LEGACY_URL, {"symbol": SYMBOL})
-            exps = _sorted_expiries((data.get("records") or {}).get("expiryDates"))[:max_expiries]
+            data = _get_json(session, NSE_LEGACY_URL, {"symbol": symbol})
+            exps = choose(_sorted_expiries((data.get("records") or {}).get("expiryDates")))
             if exps:
                 return [(e, data, "nse-legacy") for e in exps]
             errors.append("legacy endpoint returned no expiries")
@@ -267,14 +271,17 @@ def fetch_all_expiries(source: str = "auto", max_expiries: int = 4) -> list[tupl
             errors.append(str(ex))
     if source in ("auto", "nsepython"):
         try:
-            data, src = fetch_nsepython()
-            exps = _sorted_expiries((data.get("records") or {}).get("expiryDates"))[:max_expiries]
+            from nsepython import nse_optionchain_scrapper  # type: ignore
+            data = nse_optionchain_scrapper(symbol)
+            exps = choose(_sorted_expiries((data.get("records") or {}).get("expiryDates")))
             if exps:
-                return [(e, data, src) for e in exps]
+                return [(e, data, "nsepython") for e in exps]
             errors.append("nsepython returned no expiries")
-        except ChainError as ex:
-            errors.append(str(ex))
-    raise ChainError("Could not fetch option chains:\n  - " + "\n  - ".join(errors))
+        except ImportError:
+            errors.append("nsepython not installed")
+        except Exception as ex:
+            errors.append(f"nsepython failed: {type(ex).__name__}: {ex}")
+    raise ChainError(f"Could not fetch {symbol} option chains from NSE:\n  - " + "\n  - ".join(errors))
 
 
 def parse_chain(data: dict, expiry_nse: str, source: str) -> Chain:

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Bank Nifty Strangle Planner -- local web app (READ-ONLY).
+Index Strangle Planner (Bank Nifty, Nifty 50, Sensex) -- local web app (READ-ONLY).
 
-Scans every listed Bank Nifty expiry, rejects unrealistic / untradeable strikes,
+Scans the useful expiries of Bank Nifty, Nifty 50 or Sensex, rejects unrealistic / untradeable strikes,
 proposes call+put combinations (near / mid / far) and lays out a catalyst plan:
 when to enter, which expiry, when to exit.
 
@@ -28,7 +28,9 @@ from urllib.parse import parse_qs, urlparse
 
 import banknifty_strangle as bs
 import strategy as st
+from bse import fetch_all_expiries_bse
 from demo_chain import demo_all
+from indices import INDICES, choose_expiries, get_index
 
 ROOT = Path(__file__).resolve().parent
 INDEX_HTML = ROOT / "static" / "index.html"
@@ -39,10 +41,9 @@ STATIC_FILES = {  # files that make the page installable as a phone app (PWA)
     "/icon-512.png": ("icon-512.png", "image/png"),
     "/icon.svg": ("icon.svg", "image/svg+xml"),
 }
-LOG_FIELDS = ["fetched_at", "nse_timestamp", "source", "expiry", "dte", "spot", "atm_iv",
+LOG_FIELDS = ["fetched_at", "index", "nse_timestamp", "source", "expiry", "dte", "spot", "atm_iv",
               "one_sigma_pct", "near_cost", "mid_cost", "far_cost"]
-CACHE_SECONDS = 60     # NSE is fetched at most once a minute
-MAX_EXPIRIES = 4
+CACHE_SECONDS = 60     # each exchange is fetched at most once a minute per index
 
 
 class State:
@@ -51,22 +52,28 @@ class State:
         self.out_dir = out_dir
         self.replay = replay
         self.lock = threading.Lock()
-        self.cache: tuple[float, list, str] | None = None
+        self.cache: dict[tuple, tuple[float, list]] = {}
 
-    def get_all(self, source: str, force: bool) -> list[tuple[str, dict, str]]:
+    def get_all(self, index: str, source: str, force: bool) -> list[tuple[str, dict, str]]:
         if self.replay is not None:
             rec = self.replay.get("records") or {}
             exps = rec.get("expiryDates") or sorted(
                 {r.get("expiryDate") or r.get("expiryDates") for r in rec.get("data", [])} - {None})
             return [(e, self.replay, "replay file (NOT live data)") for e in exps]
         if self.demo:
-            return demo_all(MAX_EXPIRIES)
+            return demo_all(index, choose_expiries)
+        key = (index, source)
         with self.lock:
-            if self.cache and not force and self.cache[2] == source and time.time() - self.cache[0] < CACHE_SECONDS:
-                return [(e, d, s + " (cached)") for e, d, s in self.cache[1]]
-        res = bs.fetch_all_expiries(source, MAX_EXPIRIES)
+            hit = self.cache.get(key)
+            if hit and not force and time.time() - hit[0] < CACHE_SECONDS:
+                return [(e, d, s + " (cached)") for e, d, s in hit[1]]
+        ix = INDICES[index]
+        if ix["exchange"] == "BSE":
+            res = fetch_all_expiries_bse(choose_expiries)
+        else:
+            res = bs.fetch_all_expiries(source, ix["symbol"], choose_expiries)
         with self.lock:
-            self.cache = (time.time(), res, source)
+            self.cache[key] = (time.time(), res)
         return res
 
 
@@ -80,9 +87,9 @@ def _num(params: dict, key: str, default, cast=float):
         raise bs.ChainError(f"Bad value for {key}: {raw!r}") from None
 
 
-def rules_from(params: dict) -> st.Rules:
+def rules_from(params: dict, index: dict) -> st.Rules:
     r = st.Rules()
-    r.lot_size = _num(params, "lot", r.lot_size, int)
+    r.lot_size = _num(params, "lot", index["lot"], int)
     r.charges_flat = _num(params, "cflat", r.charges_flat)
     r.charges_pct = _num(params, "cpct", r.charges_pct)
     r.budget = _num(params, "budget", None) or None
@@ -104,12 +111,16 @@ def chain_rows(chain: bs.Chain) -> list[dict]:
     return [by[k] for k in sorted(by)]
 
 
-def propose(state: State, params: dict) -> dict:
-    rules = rules_from(params)
+def propose(state: State, params: dict, log: bool | None = None) -> dict:
+    try:
+        index = get_index((params.get("index") or [None])[0])
+    except ValueError as e:
+        raise bs.ChainError(str(e)) from None
+    rules = rules_from(params, index)
     source = (params.get("source") or ["auto"])[0]
     if source not in ("auto", "nse", "nsepython"):
         source = "auto"
-    raw = state.get_all(source, force=(params.get("force") or ["0"])[0] == "1")
+    raw = state.get_all(index["key"], source, force=(params.get("force") or ["0"])[0] == "1")
     today = datetime.now().date()
 
     chains, problems = [], []
@@ -121,7 +132,7 @@ def propose(state: State, params: dict) -> dict:
     if not chains:
         raise bs.ChainError("No expiry could be read.\n" + "\n".join(problems))
 
-    plan = st.build_plan([c.expiry for c in chains], today)
+    plan = st.build_plan([c.expiry for c in chains], today, index=index["key"])
     covers = st.expiry_catalysts(plan)
     expiries = []
     for ch in chains:
@@ -136,16 +147,46 @@ def propose(state: State, params: dict) -> dict:
         })
     first = chains[0]
     result = {
-        "ok": True, "demo": state.demo, "spot": first.spot, "timestamp": first.timestamp,
+        "ok": True, "demo": state.demo, "index": index, "spot": first.spot, "timestamp": first.timestamp,
         "source": first.source, "fetched_at": datetime.now().isoformat(timespec="seconds"),
         "today": today.isoformat(), "rules": asdict(rules), "plan": plan,
         "plan_rules": st.PLAN_RULES, "band_notes": st.BAND_NOTES,
         "bands_def": [{"name": n, "from": lo, "to": hi} for n, lo, hi in st.BANDS],
         "expiries": expiries, "problems": problems,
     }
-    if (params.get("log") or ["0"])[0] == "1":
+    if log if log is not None else (params.get("log") or ["0"])[0] == "1":
         append_log(state, result)
     return result
+
+
+def compare(state: State, params: dict) -> dict:
+    """Best Near/Mid/Far per index for each index's next catalyst."""
+    rows = []
+    for key in INDICES:
+        p = dict(params)
+        p["index"] = [key]
+        p.pop("lot", None)  # each index uses its own lot size
+        try:
+            r = propose(state, p, log=False)
+        except bs.ChainError as e:
+            rows.append({"index": key, "name": INDICES[key]["name"], "error": str(e)})
+            continue
+        nxt = next((x for x in r["plan"] if x["status"] != "event passed"), None)
+        exp = next((e for e in r["expiries"] if nxt and e["expiry"] == nxt["expiry"]), None)
+        best = {}
+        if exp and not exp["skipped_reason"]:
+            for b, lst in exp["bands"].items():
+                if lst:
+                    c = lst[0]
+                    best[b] = {"call": c["call"]["strike"], "put": c["put"]["strike"], "cost": c["cost"],
+                               "score": c["score"], "p_touch": c["p_touch"], "be_up_pct": c["be_up_pct"],
+                               "be_dn_pct": c["be_dn_pct"]}
+        rows.append({"index": key, "name": INDICES[key]["name"], "spot": r["spot"], "lot": r["rules"]["lot_size"],
+                     "event": nxt and nxt["event"], "event_date": nxt and nxt["date"],
+                     "expiry": nxt and nxt["expiry"], "dte": exp and exp["dte"],
+                     "atm_iv": exp and exp["atm_iv"], "one_sigma_pct": exp and exp["one_sigma_pct"],
+                     "best": best, "source": r["source"]})
+    return {"ok": True, "rows": rows, "fetched_at": datetime.now().isoformat(timespec="seconds")}
 
 
 # --------------------------------------------------------------------------- #
@@ -174,7 +215,7 @@ def append_log(state: State, r: dict) -> None:
                     continue
                 best = {k: (v[0]["cost"] if v else "") for k, v in e["bands"].items()}
                 w.writerow({
-                    "fetched_at": r["fetched_at"], "nse_timestamp": r["timestamp"], "source": r["source"],
+                    "fetched_at": r["fetched_at"], "index": r["index"]["key"], "nse_timestamp": r["timestamp"], "source": r["source"],
                     "expiry": e["expiry"], "dte": e["dte"], "spot": r["spot"],
                     "atm_iv": round(e["atm_iv"] * 100, 2) if e["atm_iv"] else "",
                     "one_sigma_pct": round(e["one_sigma_pct"], 2) if e["one_sigma_pct"] else "",
@@ -226,7 +267,7 @@ def make_handler(state: State):
                 self._send(200, (ROOT / "static" / name).read_bytes(), ctype)
             elif u.path == "/api/config":
                 r = st.Rules()
-                self._json({"demo": state.demo, "lot": r.lot_size, "cflat": r.charges_flat,
+                self._json({"demo": state.demo, "indices": INDICES, "cflat": r.charges_flat,
                             "cpct": r.charges_pct, "min_sigma": r.min_sigma, "max_sigma": r.max_sigma,
                             "min_oi": r.min_oi})
             elif u.path == "/api/proposals":
@@ -235,6 +276,13 @@ def make_handler(state: State):
                 except bs.ChainError as e:
                     self._json({"ok": False, "error": str(e)}, 502)
                 except Exception as e:  # never show silent wrong data
+                    self._json({"ok": False, "error": f"Unexpected error: {type(e).__name__}: {e}"}, 500)
+            elif u.path == "/api/compare":
+                try:
+                    self._json(compare(state, q))
+                except bs.ChainError as e:
+                    self._json({"ok": False, "error": str(e)}, 502)
+                except Exception as e:
                     self._json({"ok": False, "error": f"Unexpected error: {type(e).__name__}: {e}"}, 500)
             elif u.path == "/api/history":
                 self._json({"rows": read_log(state)})
@@ -266,7 +314,7 @@ def main():
     srv = ThreadingHTTPServer((args.host, args.port), make_handler(state))
     url = f"http://{'127.0.0.1' if args.host in ('0.0.0.0', '') else args.host}:{args.port}"
     mode = "DEMO data" if args.demo else ("REPLAY file" if replay else "live NSE")
-    print(f"Bank Nifty strangle planner running at {url}  ({mode})")
+    print(f"Index strangle planner running at {url}  ({mode})")
     print("Read-only. Ctrl+C to stop.")
     if not args.no_browser:
         threading.Timer(0.8, lambda: _try_open(url)).start()

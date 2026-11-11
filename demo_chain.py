@@ -14,37 +14,58 @@ from datetime import date, datetime, timedelta
 from strategy import bs_price
 
 DEMO_SPOT = 60850.0
+# per-index demo settings: spot, strike step, ATM IV, weekly expiry weekday (None = monthly only)
+DEMO = {
+    "BANKNIFTY": {"spot": 60850.0, "step": 100, "atm": 0.155, "weekday": None, "monthly_weekday": 1},
+    "NIFTY": {"spot": 26450.0, "step": 50, "atm": 0.125, "weekday": 1, "monthly_weekday": 1},
+    "SENSEX": {"spot": 86900.0, "step": 100, "atm": 0.13, "weekday": 3, "monthly_weekday": 3},
+}
 
 
-def _last_tuesday(y: int, m: int) -> date:
+def _last_weekday(y: int, m: int, wd: int = 1) -> date:
     d = date(y + (m == 12), m % 12 + 1, 1) - timedelta(days=1)
-    while d.weekday() != 1:
+    while d.weekday() != wd:
         d -= timedelta(days=1)
     return d
 
 
-def demo_expiries(today: date | None = None, n: int = 4) -> list[str]:
+_last_tuesday = _last_weekday
+
+
+def demo_expiries(today: date | None = None, n: int = 4, index: str = "BANKNIFTY") -> list[str]:
+    """Monthly expiries (and weeklies for indices that have them) over ~4 months."""
+    cfg = DEMO[index]
     today = today or datetime.now().date()
-    out, y, m = [], today.year, today.month
-    while len(out) < n:
-        d = _last_tuesday(y, m)
+    out = set()
+    y, m = today.year, today.month
+    for _ in range(n):
+        d = _last_weekday(y, m, cfg["monthly_weekday"])
         if d >= today:
-            out.append(d.strftime("%d-%b-%Y"))
+            out.add(d)
         m += 1
         if m == 13:
             y, m = y + 1, 1
-    return out
+    if cfg["weekday"] is not None:
+        d = today
+        while d.weekday() != cfg["weekday"]:
+            d += timedelta(days=1)
+        for _ in range(6):
+            out.add(d)
+            d += timedelta(days=7)
+    return [d.strftime("%d-%b-%Y") for d in sorted(out)]
 
 
-def demo_chain(expiry: str = "29-Dec-2026", spot: float | None = None, seed: int | None = None) -> dict:
+def demo_chain(expiry: str = "29-Dec-2026", spot: float | None = None, seed: int | None = None,
+               index: str = "BANKNIFTY") -> dict:
+    cfg = DEMO[index]
     rng = random.Random(seed)
-    spot = spot if spot is not None else DEMO_SPOT + rng.uniform(-150, 150)
+    spot = spot if spot is not None else cfg["spot"] * (1 + rng.uniform(-0.0025, 0.0025))
     exp_d = datetime.strptime(expiry, "%d-%b-%Y").date()
     dte = max(1, (exp_d - datetime.now().date()).days)
     T = dte / 365.0
-    atm = 0.155
+    atm, step = cfg["atm"], cfg["step"]
     rows = []
-    for strike in range(int(spot * 0.70) // 100 * 100, int(spot * 1.30), 100):
+    for strike in range(int(spot * 0.70) // step * step, int(spot * 1.30), step):
         x = math.log(strike / spot)
         row = {"strikePrice": strike, "expiryDate": expiry}
         for opt in ("CE", "PE"):
@@ -53,7 +74,7 @@ def demo_chain(expiry: str = "29-Dec-2026", spot: float | None = None, seed: int
             otm = (opt == "CE" and strike > spot) or (opt == "PE" and strike < spot)
             dist = abs(x)
             liq = math.exp(-dist / 0.05)                       # fades with distance
-            round_k = strike % 500 == 0
+            round_k = strike % (step * 5) == 0
             oi = int(9000 * liq * (2.5 if round_k else 0.6) + rng.uniform(0, 60))
             vol = int(30000 * liq * (2.0 if round_k else 0.5) * rng.uniform(0.6, 1.4))
             half = max(0.05, fair * (0.012 + 1.2 * dist * dist))
@@ -75,13 +96,14 @@ def demo_chain(expiry: str = "29-Dec-2026", spot: float | None = None, seed: int
     return {"records": {
         "timestamp": datetime.now().strftime("%d-%b-%Y %H:%M:%S") + " (DEMO)",
         "underlyingValue": round(spot, 2),
-        "expiryDates": demo_expiries(),
+        "expiryDates": demo_expiries(index=index),
         "data": rows,
     }}
 
 
-def demo_all(n: int = 4) -> list[tuple[str, dict, str]]:
+def demo_all(index: str = "BANKNIFTY", choose=None) -> list[tuple[str, dict, str]]:
+    choose = choose or (lambda exps: exps[:4])
     seed = random.randint(0, 10**6)
-    spot = DEMO_SPOT + random.uniform(-150, 150)
-    return [(e, demo_chain(e, spot=spot, seed=seed + i), "demo (synthetic -- NOT market data)")
-            for i, e in enumerate(demo_expiries(n=n))]
+    spot = DEMO[index]["spot"] * (1 + random.uniform(-0.0025, 0.0025))
+    return [(e, demo_chain(e, spot=spot, seed=seed + i, index=index), "demo (synthetic -- NOT market data)")
+            for i, e in enumerate(choose(demo_expiries(index=index)))]

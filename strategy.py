@@ -40,7 +40,7 @@ class Rules:
     scenario_moves: tuple = (3.0, 5.0, 8.0)  # % moves to evaluate
     rank_move: float = 5.0      # rank by worst-side multiple at this move
     per_band: int = 4           # proposals kept per distance band
-    min_gap_pts: float = 300    # proposals within a band must differ by this much on a leg
+    min_gap_pct: float = 0.5    # proposals within a band must differ by this % of spot on a leg
 
 
 # Catalyst calendar from the project brief. Dates MUST be re-verified.
@@ -49,7 +49,7 @@ CATALYSTS = [
      "note": "Meeting 2-4 Dec. Oct hike to 5.50% and 'calibrated tightening' make the outcome genuinely uncertain."},
     {"date": "2026-12-16", "name": "US Fed FOMC (approx. date)",
      "note": "Mid-Dec; confirm the exact date."},
-    {"date": "2027-01-12", "name": "Q3 bank earnings (approx. start)",
+    {"date": "2027-01-12", "name": "Q3 bank earnings (approx. start)", "only": ["BANKNIFTY"],
      "note": "HDFC, ICICI, SBI, Axis, Kotak report through mid/late Jan; Bank-Nifty-specific."},
     {"date": "2027-02-01", "name": "Union Budget",
      "note": "Sunday; the reaction lands next trading session. RBI follows on 5 Feb."},
@@ -302,8 +302,9 @@ def analyze_expiry(chain: Chain, today: date, rules: Rules) -> ExpiryAnalysis:
         pool = sorted((c for c in combos if c.band == name), key=lambda x: (-x.score, x.cost))
         picked: list[Combo] = []
         for c in pool:
-            if any(abs(c.call.strike - o.call.strike) < rules.min_gap_pts and
-                   abs(c.put.strike - o.put.strike) < rules.min_gap_pts for o in picked):
+            gap = spot * rules.min_gap_pct / 100.0
+            if any(abs(c.call.strike - o.call.strike) < gap and
+                   abs(c.put.strike - o.put.strike) < gap for o in picked):
                 continue
             picked.append(c)
             if len(picked) >= rules.per_band:
@@ -372,11 +373,13 @@ def _on_weekday(d: date) -> date:
 
 
 def build_plan(expiries: list[str], today: date, catalysts=CATALYSTS,
-               min_days_after_event: int = 14) -> list[dict]:
+               min_days_after_event: int = 14, index: str | None = None) -> list[dict]:
     """For each upcoming catalyst: entry window, expiry to use, exit rules."""
     exp_dates = sorted(datetime.strptime(e, "%d-%b-%Y").date() for e in expiries)
     plan = []
     for ev in catalysts:
+        if index and ev.get("only") and index not in ev["only"]:
+            continue
         d = date.fromisoformat(ev["date"])
         if d < today - timedelta(days=2):
             continue

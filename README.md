@@ -1,4 +1,4 @@
-# Bank Nifty cheap-strangle chain reader
+# Index strangle planner: Bank Nifty, Nifty 50, Sensex
 
 A **read-only** script that pulls the Bank Nifty option chain for one expiry. It finds the
 far-OTM call and put whose LTP is nearest a target premium (default ₹8), then reports
@@ -9,6 +9,20 @@ how far each wing is from spot, the breakevens, and the cost of one lot of the p
 
 ## On an Android phone
 See **[PHONE_SETUP.md](PHONE_SETUP.md)**: runs on the phone through Termux and installs as a home-screen app.
+
+## Indices
+| Index | Exchange | Data source | Lot (verify) | Expiries |
+|---|---|---|---|---|
+| Bank Nifty | NSE | NSE option-chain API | 30 | monthly |
+| Nifty 50 | NSE | NSE option-chain API | 65 | weekly + monthly |
+| Sensex | BSE | BSE API (`bse.py`), with column detection | 20 | weekly + monthly |
+
+For weekly indices the planner analyses the nearest 2 expiries plus each of the next 4
+monthly expiries. Q3 bank earnings appear only in the Bank Nifty plan. "Compare all three"
+lines up the best Near/Mid/Far pair for each index's next catalyst.
+
+The Sensex reader has not been tested against live BSE data yet. If BSE's format isn't
+recognised, the app shows the columns it received instead of guessing.
 
 ## How the planner decides (strategy.py)
 - **Every listed expiry** is scanned (nearest 4). Expiries with < 7 days left are skipped.

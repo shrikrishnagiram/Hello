@@ -1,7 +1,7 @@
 // Minimal service worker: makes the app installable and lets the shell open even
 // when the local server is stopped (the page then explains how to start it).
 // Market data (/api/*) is NEVER cached -- always fetched live.
-const SHELL = "strangle-shell-v2";
+const SHELL = "strangle-shell-v3";
 const FILES = ["/", "/manifest.webmanifest", "/icon-192.png", "/icon.svg"];
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(SHELL).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));

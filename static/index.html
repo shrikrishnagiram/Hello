@@ -67,6 +67,13 @@ button { cursor: pointer; font-weight: 600; }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; padding: 7px 22px; }
 button:disabled { opacity: .55; cursor: wait; }
 .more { flex-basis: 100%; }
+.seg { display: flex; flex-basis: 100%; gap: 0; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.seg button { flex: 1; border: 0; border-radius: 0; border-left: 1px solid var(--border); background: var(--surface); min-height: 42px; }
+.seg button:first-child { border-left: 0; }
+.seg button[aria-checked="true"] { background: var(--accent); color: #fff; }
+.cmpgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.cmpcard { border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+@media (max-width: 900px) { .cmpgrid { grid-template-columns: 1fr; } }
 .more summary { color: var(--text-2); font-size: 13px; font-weight: 600; cursor: pointer; }
 .more-body { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-top: 10px; }
 .check { flex-direction: row !important; align-items: center; gap: 6px !important; min-height: 38px; }
@@ -165,21 +172,22 @@ ul.rules { margin: 8px 0 0; padding-left: 18px; color: var(--text-2); font-size:
 <body>
 <div class="wrap">
   <header>
-    <h1>Bank Nifty Strangle Planner</h1>
+    <h1>Index Strangle Planner</h1>
     <span class="ro">READ-ONLY</span>
     <span class="badge" id="demoBadge" hidden>DEMO DATA — NOT MARKET PRICES</span>
     <button class="theme-btn" id="themeBtn">◐ Theme</button>
   </header>
-  <div class="sub">Scans every Bank Nifty expiry and proposes call + put combinations and a catalyst plan. Rejects strikes that are unrealistic or that you couldn't actually trade. Verify every price in your broker.</div>
+  <div class="sub">Pick an index. The planner scans its useful expiries and proposes call + put combinations and a catalyst plan. Rejects strikes that are unrealistic or that you couldn't actually trade. Verify every price in your broker.</div>
 
   <form class="controls card" id="form">
+    <div class="seg" id="indexSeg" role="radiogroup" aria-label="Index"></div>
     <label>Max budget per pair (₹, optional)
       <input type="number" id="budget" min="0" step="500" placeholder="no limit" inputmode="numeric"></label>
     <button class="primary" type="submit" id="scanBtn">Scan &amp; propose</button>
     <details class="more">
       <summary>Settings</summary>
       <div class="more-body">
-        <label>Lot size <input type="number" id="lot" min="1" step="1"></label>
+        <label>Lot size (blank = index default) <input type="number" id="lot" min="1" step="1"></label>
         <label>Charges ₹ flat <input type="number" id="cflat" min="0" step="1"></label>
         <label>Charges % <input type="number" id="cpct" min="0" step="0.5"></label>
         <label>Closest strike (σ) <input type="number" id="min_sigma" min="0.25" max="3" step="0.05"></label>
@@ -194,6 +202,12 @@ ul.rules { margin: 8px 0 0; padding-left: 18px; color: var(--text-2); font-size:
 
   <div id="err" class="banner err" hidden></div>
   <div class="status" id="status"></div>
+
+  <section class="card">
+    <h2>Compare indices for the next event</h2>
+    <div id="cmp"><div class="muted">Scans Bank Nifty, Nifty 50 and Sensex and lines up the best Near / Mid / Far pair for each one's next catalyst. Takes a few seconds.</div>
+      <button type="button" id="cmpBtn" style="margin-top:10px">Compare all three</button></div>
+  </section>
 
   <section class="card">
     <h2>Your plan — which event, when to enter, when to exit</h2>
@@ -263,7 +277,22 @@ $("themeBtn").onclick = () => {
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 
 // ---------- settings ----------
-const FIELDS = ["budget", "lot", "cflat", "cpct", "min_sigma", "max_sigma", "min_oi", "source"];
+const FIELDS = ["budget", "cflat", "cpct", "min_sigma", "max_sigma", "min_oi", "source"];
+let INDEX = "BANKNIFTY";
+function renderSeg() {
+  $("indexSeg").innerHTML = Object.entries(cfg.indices).map(([k, v]) =>
+    `<button type="button" role="radio" aria-checked="${k === INDEX}" data-ix="${k}">${esc(v.name)}</button>`).join("");
+  $("indexSeg").querySelectorAll("button").forEach(b => b.onclick = () => {
+    if (b.dataset.ix === INDEX) return;
+    INDEX = b.dataset.ix;
+    try { localStorage.setItem("plannerIndex", INDEX); } catch (e) {}
+    $("lot").value = "";
+    renderSeg(); selExp = null; scan(false);
+  });
+  const ix = cfg.indices[INDEX];
+  $("lot").placeholder = `${ix.lot} (verify)`;
+  document.querySelector("h1").textContent = `${ix.name} Strangle Planner`;
+}
 async function init() {
   try { cfg = await (await fetch("/api/config")).json(); }
   catch (e) { showErr(NOT_RUNNING); return; }
@@ -274,6 +303,8 @@ async function init() {
     const v = saved[f] ?? cfg[f];
     if (v != null) $(f).value = v;
   }
+  try { const ix = localStorage.getItem("plannerIndex"); if (ix && cfg.indices[ix]) INDEX = ix; } catch (e) {}
+  renderSeg();
   loadHistory();
   scan(false);
 }
@@ -281,6 +312,8 @@ function params(force) {
   const p = {};
   for (const f of FIELDS) p[f] = $(f).value;
   try { localStorage.setItem("plannerForm", JSON.stringify(p)); } catch (e) {}
+  p.index = INDEX;
+  p.lot = $("lot").value;
   p.log = $("log").checked ? 1 : 0;
   p.force = force ? 1 : 0;
   return new URLSearchParams(p);
@@ -325,7 +358,7 @@ function selectExpiry(name) { selExp = name; selCombo = null; renderTabs(); rend
 function renderAll() {
   const d = last;
   $("status").innerHTML = [
-    `Bank Nifty <b>${fmt(d.spot)}</b>`, `NSE time <b>${esc(d.timestamp)}</b>`,
+    `${esc(d.index.name)} <b>${fmt(d.spot)}</b>`, `Lot <b>${d.rules.lot_size}</b>`, `Expiries <b>${esc(d.index.expiries)}</b>`, `NSE time <b>${esc(d.timestamp)}</b>`,
     `Source <b>${esc(d.source)}</b>`, `Fetched <b>${new Date(d.fetched_at).toLocaleTimeString()}</b>`,
   ].map(s => `<span>${s}</span>`).join("");
   if (d.problems.length) showErr("Some expiries could not be read:\n" + d.problems.join("\n"));
@@ -536,14 +569,46 @@ async function loadHistory() {
     const { rows } = await (await fetch("/api/history")).json();
     if (!rows.length) return;
     const n = v => v === "" || v == null ? null : +v;
-    $("histTbl").innerHTML = `<table><thead><tr><th style="text-align:left">Scanned</th><th>Expiry</th><th>DTE</th><th>Spot</th>
+    $("histTbl").innerHTML = `<table><thead><tr><th style="text-align:left">Scanned</th><th>Index</th><th>Expiry</th><th>DTE</th><th>Spot</th>
       <th>ATM IV</th><th>1σ move</th><th>Best Near ₹</th><th>Best Mid ₹</th><th>Best Far ₹</th></tr></thead><tbody>${
-      rows.map(r => `<tr><td style="text-align:left">${esc((r.fetched_at || "").replace("T", " "))}</td><td>${esc(r.expiry)}</td><td>${esc(r.dte)}</td>
+      rows.map(r => `<tr><td style="text-align:left">${esc((r.fetched_at || "").replace("T", " "))}</td><td>${esc(cfg.indices[r.index] ? cfg.indices[r.index].name : (r.index || "—"))}</td><td>${esc(r.expiry)}</td><td>${esc(r.dte)}</td>
         <td>${fmt0(n(r.spot))}</td><td>${r.atm_iv ? fmt(+r.atm_iv, 1) + "%" : "—"}</td><td>${r.one_sigma_pct ? "±" + fmt(+r.one_sigma_pct, 1) + "%" : "—"}</td>
         <td>${fmt0(n(r.near_cost))}</td><td>${fmt0(n(r.mid_cost))}</td><td>${fmt0(n(r.far_cost))}</td></tr>`).join("")
     }</tbody></table><div class="muted" style="padding:6px 2px">Latest first. If ATM IV for your planned expiry falls before the event, entry gets cheaper.</div>`;
   } catch (e) {}
 }
+
+// ---------- compare indices ----------
+async function runCompare() {
+  const btn = $("cmpBtn");
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Scanning all three…';
+  try {
+    const p = params(false); p.delete("index"); p.delete("lot"); p.set("log", 0);
+    const d = await (await fetch("/api/compare?" + p)).json();
+    if (!d.ok) throw new Error(d.error);
+    const line = (name, b) => b ? `<div class="pick"><span class="bn">${name}</span><span>CE ${fmt0(b.call)} + PE ${fmt0(b.put)}</span>
+        <b>₹${fmt0(b.cost)}</b><span class="muted">±5% fast → ${fmt(b.score, 1)}×</span></div>` : `<div class="pick"><span class="bn">${name}</span><span class="muted">no tradeable pair</span></div>`;
+    $("cmp").innerHTML = `<div class="cmpgrid">${d.rows.map(r => r.error
+      ? `<div class="cmpcard"><h3>${esc(r.name)}</h3><div class="banner err" style="margin:8px 0 0">${esc(r.error)}</div></div>`
+      : `<div class="cmpcard"><div class="step-head"><h3>${esc(r.name)}</h3><span class="muted">${fmt0(r.spot)} · lot ${r.lot}</span></div>
+          <div class="muted" style="margin:2px 0 8px">${esc(r.event || "no upcoming event")} → ${r.expiry ? eshort(r.expiry) + " expiry (" + r.dte + "d)" : "no expiry yet"}
+            · ATM IV ${r.atm_iv ? fmt(r.atm_iv * 100, 1) + "%" : "—"} · 1σ ±${fmt(r.one_sigma_pct, 1)}% · a 5% move = ${r.one_sigma_pct ? fmt(5 / r.one_sigma_pct, 1) : "—"}σ</div>
+          <div class="picks">${line("Near", r.best.Near)}${line("Mid", r.best.Mid)}${line("Far", r.best.Far)}</div>
+          <button type="button" class="linkbtn" data-ix="${r.index}">Open ${esc(r.name)} plan →</button></div>`).join("")}</div>
+    <div class="muted" style="margin-top:6px">Costs are per pair at each index's own lot size. Compare the "5% = σ" column too: in a calmer index a 5% move is rarer, so its bigger multiple partly reflects a less likely move.</div>
+    <button type="button" id="cmpBtn" style="margin-top:10px">Refresh comparison</button>`;
+    $("cmpBtn").onclick = runCompare;
+    $("cmp").querySelectorAll("[data-ix]").forEach(b => b.onclick = () => {
+      const t = $("indexSeg").querySelector(`[data-ix="${b.dataset.ix}"]`);
+      if (b.dataset.ix === INDEX) { $("plan").scrollIntoView({ behavior: "smooth" }); return; }
+      t.click(); window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  } catch (e) {
+    showErr(e instanceof TypeError ? NOT_RUNNING : "Comparison failed:\n" + e.message);
+    btn.disabled = false; btn.textContent = "Compare all three";
+  }
+}
+$("cmpBtn").onclick = runCompare;
 
 init();
 </script>
