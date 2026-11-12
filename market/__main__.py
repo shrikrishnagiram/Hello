@@ -25,10 +25,15 @@ def main(argv: list[str]) -> int:
         daemon.run()
         return 0
     if cmd == "selftest":
-        print("Checking market data sources from this phone (takes about 2 minutes)...\n")
-        res = jobs.selftest(NSEClient())
-        for name, ok, msg in res:
-            print(f"{'✅' if ok else '❌'} {name}\n     {msg}\n")
+        print("Checking market data sources from this phone (about 1 minute; each result shows as it finishes)...\n")
+        def report(name, ok, msg):
+            if name is None:
+                print(msg, flush=True)                      # progress line
+            elif ok is None:
+                print(f"⏳ {name}: {msg}", flush=True)
+            else:
+                print(f"{'✅' if ok else '❌'} {name}\n     {msg}\n", flush=True)
+        res = jobs.selftest(NSEClient(), report)
         good = sum(ok for _, ok, _ in res)
         print(f"{good}/{len(res)} sources working.")
         print("Data repository:", "ready" if sync.ready() else "NOT SET UP (run market-setup)")

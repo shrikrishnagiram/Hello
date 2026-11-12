@@ -121,7 +121,7 @@ class FakeClient:
                 "option-chain-contract-info": {"expiryDates": ["13-Nov-2026", "24-Nov-2026"]},
                 "holiday-master": {"CM": [{"tradingDate": "13-Nov-2026"}]}}[path]
 
-    def file(self, url):
+    def file(self, url, retries=3, timeout=60):
         if "sec_bhavdata" in url:
             return SEC_BHAV.encode()
         buf = io.BytesIO()
@@ -249,7 +249,7 @@ class TestUniverseSources(unittest.TestCase):
                 if path in ("equity-stockIndices", "quote-equity"):
                     raise jobs.NSEError(f"{path} failed (HTTP 404)")
                 return super().json(path, params, retries)
-            def file(self, url):
+            def file(self, url, retries=3, timeout=60):
                 return test.LIST_CSV.encode() if "ind_nifty200list" in url else super().file(url)
         return C()
 

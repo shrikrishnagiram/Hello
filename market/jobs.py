@@ -55,7 +55,7 @@ def universe_list(client: NSEClient) -> list[str]:
     if p.exists() and datetime.fromtimestamp(p.stat().st_mtime, config.IST).date() == today and store.read_universe():
         return store.read_universe()
     try:
-        blob = client.file(url_index_list(config.UNIVERSE_INDEX))
+        blob = client.file(url_index_list(config.UNIVERSE_INDEX), retries=2, timeout=25)
         if blob is None:
             raise NSEError("constituents file not found")
         rows = parse.index_list(blob.decode("utf-8", errors="replace"))
@@ -68,43 +68,33 @@ def universe_list(client: NSEClient) -> list[str]:
         raise
 
 
-def universe_quotes(client: NSEClient, yahoo=None) -> tuple[list[dict], str]:
-    """Prices & volume for the Nifty 200.
+def _quietly(progress):
+    return progress or (lambda msg: None)
 
-    1) NSE's index feed (retired in 2026, kept in case it returns)
-    2) Yahoo Finance, one request per stock (~1 minute for 200)
-    3) NSE per-stock quote page (slower, heavier on NSE)
-    """
-    errors = []
-    try:
-        rows, _ = parse.index_quotes(client.json("equity-stockIndices", {"index": config.UNIVERSE_INDEX}, retries=1))
-        for r in rows:
-            r["source"] = "nse-index"
-        if not store.read_universe():
-            store.write_universe([r["symbol"] for r in rows if r["symbol"]])
-        return rows, "NSE index feed"
-    except (NSEError, parse.ParseError) as e:
-        errors.append(f"NSE index feed: {e}")
-    symbols = universe_list(client)
-    from .yahoo import YahooClient, YahooError
-    y = yahoo or YahooClient()
+
+def _yahoo_quotes(symbols, y, progress) -> tuple[list[dict], list[str]]:
+    """Quotes from Yahoo. Gives up within seconds if the first 3 stocks all fail."""
+    from .yahoo import YahooError
     rows, fails = [], []
-    for sym in symbols:
+    for i, sym in enumerate(symbols):
         try:
             r = y.quote(sym)
             r["source"] = "yahoo"
             rows.append(r)
         except YahooError as e:
             fails.append(str(e))
-        if len(fails) >= 15 and not rows:
-            break                      # Yahoo clearly not working; don't hammer it
-    if len(rows) >= 0.8 * len(symbols):
-        return rows, f"Yahoo Finance ({len(rows)}/{len(symbols)})"
-    errors.append(f"Yahoo: {len(rows)}/{len(symbols)} ok, e.g. {fails[0] if fails else '-'}")
-    got = {r["symbol"] for r in rows}
-    for sym in symbols:
-        if sym in got:
-            continue
+        if i == 2 and not rows:
+            progress(f"    Yahoo isn't answering ({fails[0]}); skipping it.")
+            break
+        if (i + 1) % 25 == 0:
+            progress(f"    Yahoo: {i + 1}/{len(symbols)} stocks done...")
+    return rows, fails
+
+
+def _nse_quotes(client, symbols, progress) -> tuple[list[dict], list[str]]:
+    """NSE per-stock quote page (price only). Gives up if the first 3 all fail."""
+    rows, fails = [], []
+    for i, sym in enumerate(symbols):
         try:
             js = client.json("quote-equity", {"symbol": sym}, retries=1)
             pi = js.get("priceInfo") or {}
@@ -114,12 +104,55 @@ def universe_quotes(client: NSEClient, yahoo=None) -> tuple[list[dict], str]:
                          "prev_close": parse.num(pi.get("previousClose")), "change_pct": parse.num(pi.get("pChange")),
                          "volume": None, "source": "nse-quote"})
         except (NSEError, AttributeError) as e:
-            errors.append(f"NSE quote {sym}: {e}")
-            if len(rows) == 0 and len(errors) > 10:
-                break
+            fails.append(f"{sym}: {e}")
+        if i == 2 and not rows:
+            progress(f"    NSE quote page isn't answering either ({fails[0]}).")
+            break
+        if (i + 1) % 25 == 0:
+            progress(f"    NSE quotes: {i + 1}/{len(symbols)} stocks done...")
+    return rows, fails
+
+
+def universe_quotes(client: NSEClient, yahoo=None, progress=None, limit: int | None = None) -> tuple[list[dict], str]:
+    """Prices & volume for the Nifty 200 (or the first `limit` stocks, for the self-test).
+
+    1) NSE's index feed (retired in 2026, kept in case it returns)
+    2) Yahoo Finance, one request per stock (~1 minute for 200)
+    3) NSE per-stock quote page (slower, heavier on NSE, no volume)
+    Each source is abandoned within seconds if it doesn't answer.
+    """
+    progress = _quietly(progress)
+    errors = []
+    progress("    trying NSE's index feed...")
+    try:
+        rows, _ = parse.index_quotes(client.json("equity-stockIndices", {"index": config.UNIVERSE_INDEX}, retries=1))
+        for r in rows:
+            r["source"] = "nse-index"
+        if not store.read_universe():
+            store.write_universe([r["symbol"] for r in rows if r["symbol"]])
+        return (rows[:limit] if limit else rows), "NSE index feed"
+    except (NSEError, parse.ParseError) as e:
+        errors.append(f"NSE index feed: {e}")
+    progress("    getting the Nifty 200 list from NSE's file...")
+    symbols = universe_list(client)
+    if limit:
+        symbols = symbols[:limit]
+    from .yahoo import YahooClient
+    progress(f"    getting prices from Yahoo Finance for {len(symbols)} stocks...")
+    rows, fails = _yahoo_quotes(symbols, yahoo or YahooClient(), progress)
+    if len(rows) >= 0.8 * len(symbols):
+        return rows, f"Yahoo Finance ({len(rows)}/{len(symbols)})"
+    errors.append(f"Yahoo: {len(rows)}/{len(symbols)} ok" + (f", e.g. {fails[0]}" if fails else ""))
+    got = {r["symbol"] for r in rows}
+    rest = [s for s in symbols if s not in got]
+    progress(f"    trying NSE's per-stock quote page for {len(rest)} stocks...")
+    more, nfails = _nse_quotes(client, rest, progress)
+    rows += more
     if len(rows) >= 0.5 * len(symbols):
         return rows, f"mixed sources ({len(rows)}/{len(symbols)})"
-    raise NSEError("could not get Nifty 200 prices: " + " | ".join(errors[:4]))
+    if nfails:
+        errors.append(f"NSE quote page: {nfails[0]}")
+    raise NSEError("could not get prices: " + " | ".join(errors[:4]))
 
 
 def snapshot(client: NSEClient, when: datetime | None = None) -> str:
@@ -260,18 +293,22 @@ def backfill(client: NSEClient, equity_days: int = config.BACKFILL_EQUITY_DAYS,
 # --------------------------------------------------------------------------- #
 # Self-test
 # --------------------------------------------------------------------------- #
-def selftest(client: NSEClient) -> list[tuple[str, bool, str]]:
-    """Try each NSE source once and report in plain words. Saves nothing."""
+def selftest(client: NSEClient, report=None) -> list[tuple[str, bool, str]]:
+    """Try each source once and report in plain words as each finishes. Saves nothing."""
     res = []
+    report = report or (lambda *a: None)
 
     def t(name, fn):
+        report(name, None, "checking...")
         try:
-            res.append((name, True, fn()))
+            r = (name, True, fn())
         except Exception as e:
-            res.append((name, False, f"{type(e).__name__}: {e}"[:300]))
+            r = (name, False, f"{type(e).__name__}: {e}"[:400])
+        res.append(r)
+        report(*r)
 
-    t("Nifty 200 prices", lambda: (lambda r: f"{len(r[0])} stocks via {r[1]}, e.g. {r[0][0]['symbol']} ₹{r[0][0]['last']}, volume {r[0][0]['volume']}")(
-        universe_quotes(client)))
+    t("Stock prices & volume (5 sample stocks)", lambda: (lambda r: f"{len(r[0])} stocks via {r[1]}, e.g. {r[0][0]['symbol']} ₹{r[0][0]['last']}, volume {r[0][0]['volume']}")(
+        universe_quotes(client, progress=lambda m: report(None, None, m), limit=5)))
     t("Indices & VIX", lambda: (lambda r: ", ".join(f"{x['index']} {x['last']}" for x in r[:3]))(
         parse.all_indices(client.json("allIndices"))))
     t("F&O open interest", lambda: (lambda r: f"{len(r)} stocks, e.g. {r[0]['symbol']} OI {r[0]['latest_oi']}")(

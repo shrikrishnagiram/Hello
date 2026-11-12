@@ -74,7 +74,7 @@ class NSEClient:
             time.sleep(2 * (attempt + 1))
         raise NSEError(f"{path} failed ({last})")
 
-    def file(self, url: str, retries: int = 3) -> bytes | None:
+    def file(self, url: str, retries: int = 3, timeout: int = 60) -> bytes | None:
         """Download an archive file. Returns None if it doesn't exist (holiday / not yet published)."""
         if not self._warm:
             self.warm()
@@ -82,7 +82,7 @@ class NSEClient:
         for attempt in range(retries):
             self._wait()
             try:
-                r = self.s.get(url, timeout=60)
+                r = self.s.get(url, timeout=timeout)
                 if r.status_code == 404:
                     return None
                 if r.status_code == 200 and r.content:

@@ -52,6 +52,7 @@ class YahooClient:
         self.gap, self._last = gap, 0.0
 
     def quote(self, nse_symbol: str, retries: int = 2) -> dict:
+        """One stock. Short timeout; a timeout or connection failure is not retried."""
         last = None
         for attempt in range(retries):
             dt = time.time() - self._last
@@ -59,7 +60,7 @@ class YahooClient:
                 time.sleep(self.gap - dt)
             self._last = time.time()
             try:
-                r = self.s.get(CHART.format(sym=quote(ysym(nse_symbol), safe="")), timeout=15)
+                r = self.s.get(CHART.format(sym=quote(ysym(nse_symbol), safe="")), timeout=8)
                 if r.status_code == 200:
                     return parse_chart(nse_symbol, r.json())
                 last = f"HTTP {r.status_code}"
@@ -68,6 +69,7 @@ class YahooClient:
             except YahooError:
                 raise
             except Exception as e:
-                last = f"{type(e).__name__}: {e}"
-            time.sleep(1.5 * (attempt + 1))
+                raise YahooError(f"{nse_symbol}: {type(e).__name__}: {str(e)[:120]}") from None
+            if r.status_code == 429:
+                time.sleep(2)
         raise YahooError(f"{nse_symbol}: {last}")
