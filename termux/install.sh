@@ -15,7 +15,7 @@ echo "==> Installing Python, git and helpers (first time: 5-10 minutes)..."
 export DEBIAN_FRONTEND=noninteractive
 APT_OPTS="-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold"
 pkg update -y || true
-apt-get install -y $APT_OPTS python git procps termux-tools
+apt-get install -y $APT_OPTS python git procps termux-tools termux-api
 echo "==> Installing the requests library..."
 pip install --disable-pip-version-check requests
 
@@ -36,6 +36,14 @@ make_cmd scanner        'exec bash "$HOME/Hello/termux/start.sh" "$@"'
 make_cmd scanner-demo   'SCANNER_DEMO=1 exec bash "$HOME/Hello/termux/start.sh" "$@"'
 make_cmd scanner-stop   'exec bash "$HOME/Hello/termux/stop.sh"'
 make_cmd scanner-update 'exec bash "$HOME/Hello/termux/install.sh"'
+# Market data collector (Nifty 200 prices, volume, F&O positions, history)
+make_cmd market-setup    'exec bash "$HOME/Hello/termux/market-setup.sh"'
+make_cmd market-start    'exec bash "$HOME/Hello/termux/market-start.sh"'
+make_cmd market-stop     'exec bash "$HOME/Hello/termux/market-stop.sh"'
+make_cmd market-status   'exec bash "$HOME/Hello/termux/market-status.sh"'
+make_cmd market-selftest 'cd "$HOME/Hello" && exec python -m market selftest'
+make_cmd market-backfill 'cd "$HOME/Hello" && exec python -m market backfill "$@"'
+make_cmd market-snapshot 'cd "$HOME/Hello" && exec python -m market snapshot'
 # Remove aliases written by older versions of this installer.
 [ -f "$HOME/.bashrc" ] && sed -i '/# strangle-scanner$/d' "$HOME/.bashrc"
 
