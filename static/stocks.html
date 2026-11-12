@@ -1,0 +1,715 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Swing</title>
+<link rel="manifest" href="/stocks.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0A0C10">
+<meta name="mobile-web-app-capable" content="yes">
+<style>
+/* ======================================================================
+   Swing — design tokens
+   Dark-first trading palette. Green/red carry direction only, always
+   paired with ▲/▼ or a word, never colour alone.
+   ====================================================================== */
+:root {
+  color-scheme: dark;
+  --bg: #0A0C10; --surface: #12151B; --surface-2: #191D25; --surface-3: #222733; --line: #262B36;
+  --text: #ECEEF2; --text-2: #A3AAB8; --text-3: #6C7383;
+  --accent: #5B8CFF; --accent-ink: #fff;
+  --up: #22C27A; --down: #F2555A; --warn: #F2A93B;
+  --up-bg: rgba(34,194,122,.13); --down-bg: rgba(242,85,90,.13); --accent-bg: rgba(91,140,255,.14); --warn-bg: rgba(242,169,59,.14); --mute-bg: rgba(163,170,184,.12);
+  --r: 16px; --r-sm: 10px;
+  --shadow: 0 10px 30px rgba(0,0,0,.35);
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #F5F6F8; --surface: #FFFFFF; --surface-2: #F1F3F6; --surface-3: #E8EBF0; --line: #E3E6EB;
+  --text: #0E1116; --text-2: #4B5260; --text-3: #8A909C;
+  --accent: #2F6BFF; --up: #0E9F5B; --down: #D93A3F; --warn: #C27A0A;
+  --up-bg: rgba(14,159,91,.10); --down-bg: rgba(217,58,63,.10); --accent-bg: rgba(47,107,255,.10); --warn-bg: rgba(194,122,10,.12); --mute-bg: rgba(75,82,96,.08);
+  --shadow: 0 10px 30px rgba(15,20,30,.12);
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+[hidden] { display: none !important; }
+html, body { margin: 0; background: var(--bg); color: var(--text); }
+body { font: 15px/1.45 -apple-system, "SF Pro Text", "Segoe UI", Roboto, "Inter", sans-serif; font-variant-numeric: tabular-nums; }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; border: 0; background: none; padding: 0; }
+.app { max-width: 560px; margin: 0 auto; min-height: 100vh; padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+
+/* ---- top bar ---- */
+.top { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(12px); }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 19px; letter-spacing: -0.02em; }
+.brand svg { width: 26px; height: 26px; }
+.top .sp { flex: 1; }
+.iconbtn { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; background: var(--surface); border: 1px solid var(--line); }
+.iconbtn svg { width: 18px; height: 18px; stroke: var(--text-2); }
+.fresh { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-3); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--up); box-shadow: 0 0 0 3px var(--up-bg); }
+.dot.stale { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-bg); }
+.demo { margin: 0 16px 8px; padding: 8px 12px; border-radius: var(--r-sm); background: var(--warn-bg); color: var(--warn); font-size: 12px; font-weight: 700; text-align: center; }
+
+/* ---- layout ---- */
+.view { padding: 4px 16px 20px; }
+.h1 { font-size: 26px; font-weight: 800; letter-spacing: -0.02em; margin: 8px 0 2px; }
+.sub { color: var(--text-2); font-size: 14px; margin: 0 0 14px; }
+.sec { display: flex; align-items: baseline; justify-content: space-between; margin: 22px 0 10px; }
+.sec h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-3); margin: 0; font-weight: 700; }
+.sec .count { font-size: 12px; color: var(--text-3); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; }
+.stack > * + * { margin-top: 10px; }
+.muted { color: var(--text-3); font-size: 13px; }
+.empty { text-align: center; padding: 28px 16px; color: var(--text-2); }
+.empty b { display: block; color: var(--text); font-size: 16px; margin-bottom: 4px; }
+
+/* ---- market card ---- */
+.mood { display: flex; align-items: center; gap: 10px; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 99px; font-size: 12px; font-weight: 800; letter-spacing: .02em; }
+.pill.Healthy { background: var(--up-bg); color: var(--up); }
+.pill.Mixed { background: var(--warn-bg); color: var(--warn); }
+.pill.Weak { background: var(--down-bg); color: var(--down); }
+.pill.Unknown { background: var(--mute-bg); color: var(--text-2); }
+.idx { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+.idx div { background: var(--surface-2); border-radius: var(--r-sm); padding: 9px 10px; }
+.idx small { display: block; color: var(--text-3); font-size: 11px; font-weight: 600; }
+.idx b { font-size: 15px; }
+.chg { font-size: 12px; font-weight: 700; }
+.up { color: var(--up); } .down { color: var(--down); }
+.breadth { margin-top: 12px; }
+.bar { height: 8px; border-radius: 99px; background: var(--down-bg); overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--up); border-radius: 99px; }
+
+/* ---- verdict / action cards ---- */
+.act { display: grid; grid-template-columns: 1fr auto; gap: 10px 12px; cursor: pointer; }
+.act .who { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.verdict { flex: none; font-size: 11px; font-weight: 900; letter-spacing: .06em; padding: 5px 8px; border-radius: 8px; }
+.v-BUY { background: var(--up-bg); color: var(--up); }
+.v-SELL { background: var(--down-bg); color: var(--down); }
+.v-WATCH { background: var(--accent-bg); color: var(--accent); }
+.v-AVOID { background: var(--warn-bg); color: var(--warn); }
+.v-WAIT { background: var(--mute-bg); color: var(--text-2); }
+.sym { font-weight: 800; font-size: 16px; letter-spacing: -0.01em; }
+.co { color: var(--text-3); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.px { text-align: right; }
+.px b { display: block; font-size: 15px; }
+.why { grid-column: 1 / -1; color: var(--text-2); font-size: 14px; }
+.plan-strip { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.plan-strip div { background: var(--surface-2); border-radius: 9px; padding: 7px 8px; }
+.plan-strip small { display: block; font-size: 10px; color: var(--text-3); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+.plan-strip b { font-size: 14px; }
+
+/* ---- list rows (radar / watchlist) ---- */
+.seg { display: grid; grid-template-columns: 1fr 1fr; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 4px; gap: 4px; }
+.seg button { padding: 9px 8px; border-radius: 9px; font-weight: 700; color: var(--text-2); }
+.seg button[aria-selected="true"] { background: var(--surface-3); color: var(--text); }
+.rows { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.row { display: grid; grid-template-columns: 1fr 74px auto; gap: 10px; align-items: center; padding: 12px 14px; cursor: pointer; }
+.row + .row { border-top: 1px solid var(--line); }
+.row .meta { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 5px; }
+.tag { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: var(--surface-2); color: var(--text-2); white-space: nowrap; }
+.tag.stage-breakout { background: var(--up-bg); color: var(--up); }
+.tag.stage-breakdown { background: var(--down-bg); color: var(--down); }
+.tag.stage-setting-up, .tag.stage-weakening { background: var(--accent-bg); color: var(--accent); }
+.tag.stage-extended { background: var(--warn-bg); color: var(--warn); }
+.ready { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-3); margin-top: 6px; }
+.ready .bar { width: 70px; height: 5px; background: var(--surface-3); }
+.ready .bar i { background: var(--accent); }
+.spark { width: 74px; height: 32px; display: block; }
+.searchbox { display: flex; gap: 8px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 0 12px; }
+.searchbox input { flex: 1; border: 0; background: none; padding: 12px 0; outline: none; font-size: 16px; }
+.hits { margin-top: 8px; }
+
+/* ---- portfolio ---- */
+.cap .big { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; }
+.stackbar { display: flex; height: 10px; border-radius: 99px; overflow: hidden; background: var(--surface-3); margin: 12px 0 8px; }
+.stackbar i { display: block; height: 100%; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--text-2); }
+.legend span::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; background: var(--c); }
+.pos .pl { font-size: 18px; font-weight: 800; }
+.track { position: relative; height: 6px; border-radius: 99px; background: linear-gradient(90deg, var(--down-bg), var(--surface-3) 35%, var(--up-bg)); margin: 18px 0 6px; }
+.track .mk { position: absolute; top: -5px; width: 3px; height: 16px; border-radius: 2px; background: var(--text); transform: translateX(-1px); }
+.track-l { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-3); }
+.btns { display: flex; gap: 8px; margin-top: 12px; }
+.btn { flex: 1; padding: 11px 12px; border-radius: 12px; font-weight: 700; background: var(--surface-2); border: 1px solid var(--line); text-align: center; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.danger { color: var(--down); }
+
+/* ---- bottom nav ---- */
+nav.tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; display: flex; justify-content: center;
+  background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(14px); border-top: 1px solid var(--line);
+  padding-bottom: env(safe-area-inset-bottom); }
+nav.tabs .in { display: grid; grid-template-columns: repeat(4, 1fr); width: 100%; max-width: 560px; }
+nav.tabs button { padding: 9px 0 10px; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 11px; font-weight: 700; color: var(--text-3); position: relative; }
+nav.tabs svg { width: 22px; height: 22px; stroke: currentColor; }
+nav.tabs button[aria-current="page"] { color: var(--text); }
+nav.tabs button[aria-current="page"] svg { stroke: var(--accent); }
+nav.tabs .badge { position: absolute; top: 5px; left: calc(50% + 8px); min-width: 17px; height: 17px; padding: 0 5px; border-radius: 99px; background: var(--accent); color: #fff; font-size: 10px; display: grid; place-items: center; }
+
+/* ---- stock detail (full-screen sheet) ---- */
+.detail { position: fixed; inset: 0; z-index: 40; background: var(--bg); overflow-y: auto; transform: translateY(100%); transition: transform .28s cubic-bezier(.2,.8,.2,1); }
+.detail.open { transform: none; }
+.detail .in { max-width: 560px; margin: 0 auto; padding: 0 16px 40px; }
+.dtop { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 10px; padding: 12px 0; background: var(--bg); }
+.dtop .t { flex: 1; font-weight: 800; }
+.star.on svg { fill: var(--warn); stroke: var(--warn); }
+.price-xl { font-size: 34px; font-weight: 800; letter-spacing: -0.03em; }
+.banner { border-radius: var(--r); padding: 12px 14px; margin-top: 12px; font-weight: 600; }
+.banner small { display: block; font-weight: 500; color: var(--text-2); margin-top: 2px; }
+.b-breakout { background: var(--up-bg); color: var(--up); }
+.b-setting-up, .b-weakening { background: var(--accent-bg); color: var(--accent); }
+.b-breakdown { background: var(--down-bg); color: var(--down); }
+.b-extended { background: var(--warn-bg); color: var(--warn); }
+.b-neutral { background: var(--mute-bg); color: var(--text-2); }
+.chartcard { padding: 10px 6px 6px; }
+.chips { display: flex; gap: 6px; padding: 0 8px 6px; }
+.chips button { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 8px; color: var(--text-3); }
+.chips button[aria-pressed="true"] { background: var(--surface-3); color: var(--text); }
+.readout { font-size: 12px; color: var(--text-2); padding: 0 8px; min-height: 18px; }
+svg text { font-size: 10px; fill: var(--text-3); }
+.check { list-style: none; margin: 0; padding: 0; }
+.check li { display: grid; grid-template-columns: 26px 1fr; gap: 10px; padding: 10px 0; }
+.check li + li { border-top: 1px solid var(--line); }
+.ck { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; font-weight: 900; font-size: 14px; }
+.ck.y { background: var(--up-bg); color: var(--up); }
+.ck.n { background: var(--surface-2); color: var(--text-3); }
+.check b { display: block; font-size: 14px; }
+.check span { color: var(--text-2); font-size: 13px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.kv { background: var(--surface-2); border-radius: var(--r-sm); padding: 10px; }
+.kv small { display: block; color: var(--text-3); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.kv b { font-size: 16px; }
+.kv em { font-style: normal; font-size: 12px; color: var(--text-2); display: block; }
+.score { display: flex; align-items: center; gap: 12px; }
+.ring { width: 54px; height: 54px; flex: none; }
+
+/* ---- term buttons + sheets ---- */
+.q { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-left: 5px; border-radius: 50%; font-size: 11px; font-weight: 800; color: var(--accent); border: 1.5px solid var(--accent); vertical-align: 1px; }
+.scrim { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,.5); display: flex; align-items: flex-end; justify-content: center; }
+.sheet { width: 100%; max-width: 560px; background: var(--surface); border-radius: 22px 22px 0 0; padding: 10px 18px calc(22px + env(safe-area-inset-bottom)); box-shadow: var(--shadow); max-height: 86vh; overflow: auto; }
+.grab { width: 40px; height: 5px; border-radius: 9px; background: var(--surface-3); margin: 0 auto 12px; }
+.sheet h3 { margin: 0 0 6px; font-size: 19px; }
+.sheet p { margin: 6px 0; color: var(--text-2); }
+.sheet .ex { background: var(--surface-2); border-radius: var(--r-sm); padding: 10px 12px; font-size: 14px; margin-top: 8px; }
+.field { display: block; margin-top: 12px; }
+.field span { display: block; font-size: 12px; font-weight: 700; color: var(--text-3); margin-bottom: 5px; }
+.field input { width: 100%; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-2); font-size: 16px; }
+.err { color: var(--down); font-size: 13px; margin-top: 8px; }
+.toast { position: fixed; left: 50%; bottom: calc(90px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 70; background: var(--surface-3); color: var(--text); padding: 10px 16px; border-radius: 12px; font-weight: 600; font-size: 14px; box-shadow: var(--shadow); }
+.skel { height: 84px; border-radius: var(--r); background: linear-gradient(90deg, var(--surface), var(--surface-2), var(--surface)); background-size: 200% 100%; animation: sh 1.2s infinite; }
+@keyframes sh { to { background-position: -200% 0; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#5B8CFF"/><path d="M7 21l6-6 4 4 8-9" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Swing
+    </div>
+    <div class="sp"></div>
+    <div class="fresh" id="fresh"></div>
+    <button class="iconbtn" id="learnBtn" aria-label="How this works"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7M12 17h.01" stroke-linecap="round"/></svg></button>
+    <button class="iconbtn" id="themeBtn" aria-label="Light or dark"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+  </header>
+  <div class="demo" id="demoNote" hidden>PRACTICE DATA, NOT REAL PRICES. Real data appears once your phone has collected it.</div>
+
+  <main>
+    <section class="view" id="v-today"></section>
+    <section class="view" id="v-radar" hidden></section>
+    <section class="view" id="v-watch" hidden></section>
+    <section class="view" id="v-port" hidden></section>
+  </main>
+</div>
+
+<nav class="tabs" aria-label="Sections"><div class="in">
+  <button data-tab="today" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" stroke-linejoin="round"/></svg>Today<span class="badge" id="badgeToday" hidden></span></button>
+  <button data-tab="radar"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12l6-6" stroke-linecap="round"/></svg>Radar</button>
+  <button data-tab="watch"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" stroke-linejoin="round"/></svg>Watchlist</button>
+  <button data-tab="port"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18"/></svg>Portfolio</button>
+</div></nav>
+
+<div class="detail" id="detail" hidden><div class="in" id="detailIn"></div></div>
+<div class="scrim" id="scrim" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
+
+<script>
+// ======================================================================
+// helpers
+// ======================================================================
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const nf = (v, d = 2) => v == null || isNaN(v) ? "—" : Number(v).toLocaleString("en-IN", { minimumFractionDigits: d, maximumFractionDigits: d });
+const rs = (v, d = 0) => v == null || isNaN(v) ? "—" : (v < 0 ? "−₹" : "₹") + nf(Math.abs(v), d);
+const pc = (v, d = 2) => v == null || isNaN(v) ? "—" : (v >= 0 ? "▲ " : "▼ ") + nf(Math.abs(v), d) + "%";
+const cls = v => v == null ? "" : v >= 0 ? "up" : "down";
+const q = t => `<button class="q" data-term="${t}" aria-label="What does this mean?">?</button>`;
+const store = { get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+                set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} } };
+const STAGE = {
+  "breakout": ["Breakout", "Broke above its recent high on heavy volume"],
+  "setting-up": ["Setting up", "Close to breaking out; waiting for confirmation"],
+  "extended": ["Too far, too fast", "Already well above its average; don't chase"],
+  "breakdown": ["Breakdown", "Broke below its recent low on heavy volume"],
+  "weakening": ["Weakening", "Close to breaking down"],
+  "neutral": ["No clear setup", "Nothing actionable right now"],
+};
+let D = null, tab = store.get("tab", "today"), radarDir = "up";
+
+// ======================================================================
+// glossary (plain language)
+// ======================================================================
+const G = {
+  breakout: ["Breakout", "The price climbs above the highest level of the last 20 days, with much more trading than usual. It often starts a new leg up. Without strong volume it's often a false start."],
+  breakdown: ["Breakdown", "The price falls below the lowest level of the last 20 days on heavy trading. It often starts a new leg down."],
+  coiling: ["Coiling", "The price has been moving in a much narrower range than usual, like a spring being compressed. Big moves often follow quiet periods."],
+  delivery: ["Delivery %", "The share of traded shares that buyers actually took home, rather than buying and selling the same day. Rising delivery during a quiet period suggests serious buyers are collecting."],
+  volume: ["Volume vs normal", "How many shares traded compared with the average of the last 20 days. 2× means twice the usual amount. Big moves on heavy volume are more trustworthy."],
+  stop: ["Stop-loss", "The price where you admit the idea was wrong and sell. Decide it before you buy, and never move it lower."],
+  risk: ["Risk", "How much you'd lose if the stop-loss is hit: (buy price − stop) × shares. The app sizes every trade so this stays under ₹500, which is 1% of your ₹50,000."],
+  qty: ["Shares to buy", "Calculated so that hitting the stop-loss costs at most ₹500, and no single stock takes more than ₹12,500 (a quarter of your money)."],
+  target: ["Target", "A first place to take profit: twice the amount you're risking. You can sell part there and keep the rest with the stop raised."],
+  rs: ["Stronger than market", "How the stock did over 3 months compared with the typical stock. Leaders tend to keep leading."],
+  sma: ["50-day / 200-day average", "The average closing price over 50 or 200 days. Price above both, with the 200-day rising, is the classic uptrend."],
+  buildup: ["Futures positions", "Long build-up: price up and more futures positions opened, meaning fresh buying. Short build-up: price down and more positions, meaning fresh selling. Short covering: price up while positions close, as sellers give up. Long unwinding: price down while positions close, as buyers leave."],
+  pcr: ["Put/call ratio", "Open put options divided by open call options. Very high can mean lots of protection being bought; very low, lots of optimism. Use it as context, not a signal."],
+  wall: ["Call wall / put wall", "The strikes with the most open call options (often acts like a ceiling) and put options (often acts like a floor) this month."],
+  lot: ["Option lot", "Options trade in fixed packs. The lot cost is the price per unit × lot size. At your capital, most stock option lots are too big for sensible risk, so they're shown as practice."],
+  mood: ["Market mood", "How many stocks in the list are above their 50-day average. Healthy: above 60%, so breakouts work better. Weak: below 40%, so most breakouts fail; protect cash."],
+  score: ["Readiness score", "How many of the six checks pass, weighted. 55+ makes the radar. It measures how strong the setup is, not a guarantee."],
+};
+function openTerm(t) {
+  const g = G[t]; if (!g) return;
+  openSheet(`<h3>${esc(g[0])}</h3><p>${esc(g[1])}</p><button class="btn primary" style="width:100%;margin-top:14px" data-close>Got it</button>`);
+}
+function openSheet(html) { $("sheet").innerHTML = `<div class="grab"></div>${html}`; $("scrim").hidden = false; }
+function closeSheet() { $("scrim").hidden = true; }
+$("scrim").addEventListener("click", e => { if (e.target === $("scrim") || e.target.closest("[data-close]")) closeSheet(); });
+document.addEventListener("click", e => {
+  const b = e.target.closest(".q"); if (b) { e.preventDefault(); e.stopPropagation(); openTerm(b.dataset.term); return; }
+  const s = e.target.closest("[data-stock]"); if (s && !e.target.closest("button:not([data-stock])")) openStock(s.dataset.stock);
+}, true);
+function toast(msg) { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2200); }
+
+// ======================================================================
+// theme
+// ======================================================================
+{ const t = store.get("theme", null); if (t) document.documentElement.dataset.theme = t; }
+$("themeBtn").onclick = () => {
+  const n = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+  document.documentElement.dataset.theme = n; store.set("theme", n);
+  if (D) render(); if (!$("detail").hidden && current) renderDetail(current);
+};
+
+// ======================================================================
+// tiny charts
+// ======================================================================
+function spark(vals, w = 74, h = 32, level = null) {
+  if (!vals || vals.length < 2) return "";
+  const lo = Math.min(...vals, level ?? Infinity), hi = Math.max(...vals, level ?? -Infinity), r = hi - lo || 1;
+  const X = i => (i / (vals.length - 1)) * (w - 2) + 1, Y = v => h - 3 - ((v - lo) / r) * (h - 6);
+  const col = vals[vals.length - 1] >= vals[0] ? "var(--up)" : "var(--down)";
+  const d = vals.map((v, i) => `${i ? "L" : "M"}${X(i).toFixed(1)} ${Y(v).toFixed(1)}`).join("");
+  const lv = level != null ? `<line x1="0" x2="${w}" y1="${Y(level)}" y2="${Y(level)}" stroke="var(--text-3)" stroke-dasharray="2 2" stroke-width="1"/>` : "";
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" aria-hidden="true">${lv}<path d="${d}" fill="none" stroke="${col}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+}
+function ring(score, dir) {
+  const r = 22, c = 2 * Math.PI * r, f = Math.max(0, Math.min(1, score / 100));
+  const col = dir === "down" ? "var(--down)" : "var(--up)";
+  return `<svg class="ring" viewBox="0 0 54 54" role="img" aria-label="Readiness ${score} of 100"><circle cx="27" cy="27" r="${r}" fill="none" stroke="var(--surface-3)" stroke-width="6"/>
+    <circle cx="27" cy="27" r="${r}" fill="none" stroke="${col}" stroke-width="6" stroke-linecap="round" stroke-dasharray="${c * f} ${c}" transform="rotate(-90 27 27)"/>
+    <text x="27" y="31" text-anchor="middle" style="font-size:14px;font-weight:800;fill:var(--text)">${score}</text></svg>`;
+}
+
+// ======================================================================
+// data
+// ======================================================================
+async function load() {
+  try {
+    const r = await fetch("/api/overview"); D = await r.json();
+    if (D.error) throw new Error(D.error);
+  } catch (e) {
+    $("v-today").innerHTML = `<div class="empty" style="margin-top:40px"><b>Can't reach the app's engine</b>Open Termux and type <code>stocks</code>, then come back.</div>`;
+    return;
+  }
+  render();
+}
+function fresh() {
+  const st = D.snapshot_at || D.asof, stale = !D.demo && D.asof && (Date.now() - new Date(D.asof + "T00:00:00")) / 864e5 > 4;
+  const dl = iso => new Date(iso.slice(0, 10) + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+  $("fresh").innerHTML = st ? `<span class="dot ${stale ? "stale" : ""}"></span>${D.snapshot_at ? esc(dl(D.snapshot_at) + " " + D.snapshot_at.slice(11, 16)) : esc(dl(D.asof) + " close")}` : "";
+  $("demoNote").hidden = !D.demo;
+}
+
+// ======================================================================
+// views
+// ======================================================================
+function render() {
+  fresh();
+  renderToday(); renderRadar(); renderWatch(); renderPort();
+  const n = D.actions.filter(a => a.kind === "BUY" || a.kind === "SELL").length;
+  $("badgeToday").hidden = !n; $("badgeToday").textContent = n;
+  showTab(tab);
+}
+function showTab(t) {
+  tab = t; store.set("tab", t);
+  for (const v of ["today", "radar", "watch", "port"]) $("v-" + v).hidden = v !== t;
+  document.querySelectorAll("nav.tabs button").forEach(b => b.setAttribute("aria-current", b.dataset.tab === t ? "page" : "false"));
+  window.scrollTo({ top: 0 });
+}
+document.querySelectorAll("nav.tabs button").forEach(b => b.onclick = () => showTab(b.dataset.tab));
+
+function greeting() {
+  const h = new Date().getHours();
+  return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+}
+
+function renderToday() {
+  const m = D.market, acts = D.actions;
+  const order = { SELL: 0, BUY: 1, WAIT: 2, WATCH: 3, AVOID: 4 };
+  acts.sort((a, b) => order[a.kind] - order[b.kind]);
+  const nBuy = acts.filter(a => a.kind === "BUY").length, nSell = acts.filter(a => a.kind === "SELL").length;
+  const headline = nSell ? `${nSell} thing${nSell > 1 ? "s" : ""} to sell` : nBuy ? `${nBuy} buy idea${nBuy > 1 ? "s" : ""} today` : "No trades needed today";
+  let h = `<div class="h1">${greeting()}</div><p class="sub">${esc(headline)}. Prices as of ${esc(D.snapshot_at ? D.snapshot_at : new Date(D.asof + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" }) + " close")}.</p>
+  <div class="card">
+    <div class="mood"><span class="pill ${esc(m.mood)}">${m.mood === "Healthy" ? "●" : m.mood === "Weak" ? "●" : "●"} ${esc(m.mood)} market</span>${q("mood")}</div>
+    <p class="muted" style="margin:8px 0 0">${esc(m.note)}</p>
+    <div class="idx">
+      ${[["Nifty 50", m.nifty], ["Bank Nifty", m.bank], ["VIX (fear)", m.vix]].map(([n, x]) =>
+        `<div><small>${n}</small><b>${nf(x.last, n.startsWith("VIX") ? 2 : 0)}</b> <span class="chg ${n.startsWith("VIX") ? "" : cls(x.chg)}">${x.chg == null ? "" : pc(x.chg, 1)}</span></div>`).join("")}
+    </div>
+    ${m.breadth != null ? `<div class="breadth"><div class="bar"><i style="width:${m.breadth}%"></i></div>
+      <div class="muted" style="margin-top:6px">${nf(m.breadth, 0)}% of stocks are in an uptrend</div></div>` : ""}
+  </div>
+`;
+  const main = acts.filter(a => ["SELL", "BUY", "WAIT"].includes(a.kind));
+  const close = acts.filter(a => a.kind === "WATCH"), avoid = acts.filter(a => a.kind === "AVOID");
+  h += `<div class="sec"><h2>Do today</h2><span class="count">${main.length}</span></div>`;
+  h += main.length ? `<div class="stack">${main.map(actionCard).join("")}</div>`
+    : `<div class="card empty"><b>Nothing to buy or sell today</b>That's normal. Good setups are rare, and waiting is a position too.</div>`;
+  if (close.length) h += `<div class="sec"><h2>Getting close</h2><span class="count">${close.length}</span></div>
+    <p class="muted" style="margin:-4px 2px 10px">Near a breakout. The app tells you if they break out; no need to watch them yourself.</p>
+    <div class="rows">${close.map(a => miniRow(a, "WATCH")).join("")}</div>`;
+  if (avoid.length) h += `<div class="sec"><h2>Avoid buying</h2><span class="count">${avoid.length}</span></div>
+    <div class="rows">${avoid.map(a => miniRow(a, "AVOID")).join("")}</div>`;
+  h += `<p class="muted" style="margin-top:18px;text-align:center">Suggestions, not orders. You buy and sell in your broker app, then record it in Portfolio.</p>`;
+  $("v-today").innerHTML = h;
+}
+
+function actionCard(a) {
+  const c = a.card, p = c.plan;
+  const showPlan = (a.kind === "BUY" || a.kind === "WATCH") && p && p.entry;
+  return `<div class="card act" data-stock="${esc(c.symbol)}">
+    <div class="who"><span class="verdict v-${a.kind}">${a.kind}</span>
+      <div style="min-width:0"><div class="sym">${esc(c.symbol)}</div><div class="co">${esc(c.company)}</div></div></div>
+    <div class="px" style="display:flex;gap:10px;align-items:center">${spark(c.spark, 64, 28)}<div><b>₹${nf(c.last)}</b><span class="chg ${cls(c.chg_pct)}">${pc(c.chg_pct)}</span></div></div>
+    <div class="why">${esc(a.why)}</div>
+    ${showPlan ? `<div class="plan-strip">
+      <div><small>${a.kind === "BUY" ? "Buy up to" : "Buy above"}</small><b>₹${nf(p.entry, 0)}</b></div>
+      <div><small>Stop</small><b>₹${nf(p.stop, 0)}</b></div>
+      <div><small>Shares</small><b>${p.qty}</b></div>
+      <div><small>Risk</small><b>${rs(p.risk)}</b></div></div>` : ""}
+  </div>`;
+}
+
+function miniRow(a, kind) {
+  const c = a.card;
+  return `<div class="row" data-stock="${esc(c.symbol)}">
+    <div style="min-width:0"><div class="sym">${esc(c.symbol)}</div><div class="co" style="white-space:normal">${esc(a.why)}</div></div>
+    ${spark(c.spark, 74, 32)}
+    <div class="px"><b>₹${nf(c.last)}</b><span class="chg ${cls(c.chg_pct)}">${pc(c.chg_pct)}</span></div></div>`;
+}
+
+function row(c, opts = {}) {
+  const st = STAGE[c.stage] || STAGE.neutral;
+  return `<div class="row" data-stock="${esc(c.symbol)}">
+    <div style="min-width:0">
+      <div class="sym">${esc(c.symbol)}</div><div class="co">${esc(c.company)}</div>
+      <div class="meta"><span class="tag stage-${c.stage}">${st[0]}</span>${(c.tags || []).slice(0, opts.tags ?? 2).map(t => `<span class="tag">${esc(t)}</span>`).join("")}</div>
+      ${opts.ready ? `<div class="ready"><div class="bar"><i style="width:${c.score}%;${c.direction === "down" ? "background:var(--down)" : ""}"></i></div>Ready ${c.score}/100</div>` : ""}
+    </div>
+    ${spark(c.spark, 74, 32)}
+    <div class="px"><b>₹${nf(c.last)}</b><span class="chg ${cls(c.chg_pct)}">${pc(c.chg_pct)}</span></div>
+  </div>`;
+}
+
+function renderRadar() {
+  const list = radarDir === "up" ? D.radar_up : D.radar_down;
+  $("v-radar").innerHTML = `<div class="h1">Radar</div>
+    <p class="sub">Stocks close to a big move, ranked by how many checks they pass${q("score")}.</p>
+    <div class="seg" role="tablist">
+      <button role="tab" aria-selected="${radarDir === "up"}" data-dir="up">▲ Breaking up · ${D.radar_up.length}</button>
+      <button role="tab" aria-selected="${radarDir === "down"}" data-dir="down">▼ Breaking down · ${D.radar_down.length}</button></div>
+    <p class="muted" style="margin:10px 2px">${radarDir === "up"
+      ? `Near a breakout${q("breakout")} with buyers in control. Tap one to see its plan.`
+      : `Near a breakdown${q("breakdown")}. Avoid buying these; profiting from falls needs put options (practice only at your size).`}</p>
+    ${list.length ? `<div class="rows">${list.map(c => row(c, { ready: true })).join("")}</div>`
+      : `<div class="card empty"><b>Nothing on the radar</b>No stock passes enough checks right now.</div>`}`;
+  $("v-radar").querySelectorAll("[data-dir]").forEach(b => b.onclick = () => { radarDir = b.dataset.dir; renderRadar(); });
+}
+
+function renderWatch() {
+  $("v-watch").innerHTML = `<div class="h1">Watchlist</div><p class="sub">Your stocks, checked against the same rules every day.</p>
+    <div class="searchbox"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--text-3)"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5" stroke-linecap="round"/></svg>
+      <input id="search" placeholder="Add a stock, e.g. Kalyan" autocomplete="off" enterkeyhint="search"></div>
+    <div class="hits" id="hits"></div>
+    <div class="sec"><h2>Watching</h2><span class="count">${D.watchlist.length}</span></div>
+    ${D.watchlist.length ? `<div class="rows">${D.watchlist.map(c => row(c, { ready: true })).join("")}</div>` : `<div class="card empty"><b>Empty watchlist</b>Search above, or tap ☆ on any stock.</div>`}
+    ${D.watch_missing.length ? `<p class="muted" style="margin-top:10px">Waiting for data: ${D.watch_missing.map(esc).join(", ")}. These appear once their history is collected.</p>` : ""}`;
+  let tmr;
+  $("search").oninput = e => {
+    clearTimeout(tmr);
+    const v = e.target.value.trim();
+    tmr = setTimeout(async () => {
+      if (!v) { $("hits").innerHTML = ""; return; }
+      const hits = await (await fetch("/api/search?q=" + encodeURIComponent(v))).json();
+      const on = new Set(D.watchlist.map(w => w.symbol));
+      $("hits").innerHTML = hits.length ? `<div class="rows">${hits.map(h => `<div class="row" style="grid-template-columns:1fr auto">
+        <div><div class="sym">${esc(h.symbol)}</div><div class="co">${esc(h.company)} · ${esc(h.industry)}</div></div>
+        <button class="btn ${on.has(h.symbol) ? "" : "primary"}" style="flex:none;padding:8px 14px" data-add="${esc(h.symbol)}">${on.has(h.symbol) ? "Added" : "+ Add"}</button></div>`).join("")}</div>`
+        : `<p class="muted">No match in the Nifty 200.</p>`;
+      $("hits").querySelectorAll("[data-add]").forEach(b => b.onclick = async () => { await watch(b.dataset.add, true); $("search").value = ""; $("hits").innerHTML = ""; });
+    }, 180);
+  };
+}
+
+async function watch(sym, add) {
+  await fetch("/api/watch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: sym, add }) });
+  toast(add ? `${sym} added to watchlist` : `${sym} removed`);
+  await load();
+}
+
+function renderPort() {
+  const pos = D.positions, cap = D.capital.total;
+  let invested = 0, atRisk = 0, pnl = 0;
+  for (const p of pos) {
+    const last = p.card ? p.card.last : +p.price;
+    invested += p.qty * p.price; atRisk += Math.max(0, (Math.min(last, p.price) - p.stop) * p.qty) || 0;
+    pnl += (last - p.price) * p.qty;
+  }
+  const free = Math.max(0, cap - invested);
+  const seg = (v, c) => `<i style="width:${Math.max(0, v / cap * 100)}%;background:${c}"></i>`;
+  $("v-port").innerHTML = `<div class="h1">Portfolio</div><p class="sub">Trades you've recorded. The app watches their stop-losses for you.</p>
+    <div class="card cap">
+      <div class="muted">Trading capital</div><div class="big">${rs(cap)}</div>
+      <div class="stackbar">${seg(invested - atRisk, "var(--accent)")}${seg(atRisk, "var(--warn)")}</div>
+      <div class="legend"><span style="--c:var(--accent)">Invested ${rs(invested)}</span><span style="--c:var(--warn)">At risk ${rs(atRisk)}${q("risk")}</span><span style="--c:var(--surface-3)">Free ${rs(free)}</span></div>
+      ${pos.length ? `<div style="margin-top:10px;font-weight:700" class="${cls(pnl)}">Open profit/loss ${pnl >= 0 ? "+" : ""}${rs(pnl)}</div>` : ""}
+    </div>
+    <div class="sec"><h2>Open positions</h2><span class="count">${pos.length} / 5</span></div>
+    ${pos.length ? `<div class="stack">${pos.map(posCard).join("")}</div>` : `<div class="card empty"><b>No open trades</b>When you buy something in your broker app, record it here so the app can watch its stop-loss.</div>`}
+    <button class="btn primary" style="width:100%;margin-top:12px;padding:14px" id="addTrade">+ Record a buy</button>
+    <div class="sec"><h2>Closed trades</h2></div><div id="closed" class="muted">Loading…</div>`;
+  $("addTrade").onclick = () => tradeForm();
+  $("v-port").querySelectorAll("[data-sell]").forEach(b => b.onclick = e => { e.stopPropagation(); sellForm(b.dataset.sell); });
+  $("v-port").querySelectorAll("[data-stopedit]").forEach(b => b.onclick = e => { e.stopPropagation(); stopForm(b.dataset.stopedit); });
+  loadClosed();
+}
+
+function posCard(p) {
+  const c = p.card, last = c ? c.last : +p.price, pl = (last - p.price) * p.qty, plp = (last / p.price - 1) * 100;
+  const tgt = +p.price + 2 * (p.price - p.stop), lo = +p.stop, hi = tgt;
+  const at = Math.max(0, Math.min(100, (last - lo) / (hi - lo) * 100));
+  return `<div class="card pos" data-stock="${esc(p.symbol)}">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div><div class="sym">${esc(p.symbol)}</div><div class="co">${p.qty} shares @ ₹${nf(p.price)}</div></div>
+      <div class="px"><div class="pl ${cls(pl)}">${pl >= 0 ? "+" : ""}${rs(pl)}</div><span class="chg ${cls(plp)}">${pc(plp)}</span></div></div>
+    <div class="track"><span class="mk" style="left:${at}%"></span></div>
+    <div class="track-l"><span>Stop ₹${nf(p.stop, 0)}</span><span>Now ₹${nf(last)}</span><span>Target ₹${nf(tgt, 0)}</span></div>
+    <div class="btns"><button class="btn" data-stopedit="${esc(p.symbol)}">Move stop</button><button class="btn danger" data-sell="${esc(p.symbol)}">I sold</button></div>
+  </div>`;
+}
+
+async function loadClosed() {
+  const t = await (await fetch("/api/trades")).json();
+  if (!t.length) { $("closed").innerHTML = `<div class="card empty" style="padding:18px">Your closed trades and win rate will show here.</div>`; return; }
+  const tot = t.reduce((s, x) => s + +x.pnl, 0), wins = t.filter(x => +x.pnl > 0).length;
+  $("closed").innerHTML = `<div class="card"><div style="display:flex;justify-content:space-between"><span>${t.length} trades · ${Math.round(wins / t.length * 100)}% won</span><b class="${cls(tot)}">${tot >= 0 ? "+" : ""}${rs(tot)}</b></div></div>
+    <div class="rows" style="margin-top:8px">${t.slice().reverse().map(x => `<div class="row" style="grid-template-columns:1fr auto"><div><div class="sym">${esc(x.symbol)}</div><div class="co">${x.qty} · ₹${nf(x.buy)} → ₹${nf(x.sell)} · ${esc(x.closed)}</div></div><b class="${cls(+x.pnl)}">${+x.pnl >= 0 ? "+" : ""}${rs(+x.pnl)}</b></div>`).join("")}</div>`;
+}
+
+// ======================================================================
+// forms
+// ======================================================================
+async function post(url, body) {
+  const r = await (await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json();
+  if (!r.ok) throw new Error(r.error || "Something went wrong");
+}
+function tradeForm(pre = {}) {
+  openSheet(`<h3>Record a buy</h3><p>Enter what you actually bought in your broker app. The app will watch the stop-loss for you.</p>
+    <label class="field"><span>Stock symbol</span><input id="f_sym" value="${esc(pre.symbol || "")}" autocapitalize="characters" placeholder="e.g. KALYANKJIL"></label>
+    <div class="grid2"><label class="field"><span>Shares</span><input id="f_qty" type="number" inputmode="numeric" value="${pre.qty || ""}"></label>
+    <label class="field"><span>Price paid (₹)</span><input id="f_px" type="number" inputmode="decimal" step="0.05" value="${pre.price || ""}"></label></div>
+    <label class="field"><span>Stop-loss (₹)${q("stop")}</span><input id="f_stop" type="number" inputmode="decimal" step="0.05" value="${pre.stop || ""}"></label>
+    <div class="err" id="f_err"></div>
+    <div class="btns"><button class="btn" data-close>Cancel</button><button class="btn primary" id="f_ok">Save</button></div>`);
+  $("f_ok").onclick = async () => {
+    try {
+      await post("/api/position", { action: "add", symbol: $("f_sym").value, qty: $("f_qty").value, price: $("f_px").value, stop: $("f_stop").value });
+      closeSheet(); toast("Trade recorded"); closeStock(); tab = "port"; await load();
+    } catch (e) { $("f_err").textContent = e.message; }
+  };
+}
+function sellForm(sym) {
+  const p = D.positions.find(x => x.symbol === sym), last = p && p.card ? p.card.last : "";
+  openSheet(`<h3>I sold ${esc(sym)}</h3><p>Enter the price you sold at in your broker app. The trade moves to your history.</p>
+    <label class="field"><span>Sell price (₹)</span><input id="f_sell" type="number" inputmode="decimal" step="0.05" value="${last}"></label>
+    <div class="err" id="f_err"></div><div class="btns"><button class="btn" data-close>Cancel</button><button class="btn primary" id="f_ok">Save</button></div>`);
+  $("f_ok").onclick = async () => { try { await post("/api/position", { action: "close", symbol: sym, price: $("f_sell").value }); closeSheet(); toast("Trade closed"); await load(); } catch (e) { $("f_err").textContent = e.message; } };
+}
+function stopForm(sym) {
+  const p = D.positions.find(x => x.symbol === sym);
+  openSheet(`<h3>Move stop-loss</h3><p>Raise it as the price rises to protect profit. Never move it lower.</p>
+    <label class="field"><span>New stop (₹), currently ₹${nf(p.stop)}</span><input id="f_stop" type="number" inputmode="decimal" step="0.05" value="${p.stop}"></label>
+    <div class="err" id="f_err"></div><div class="btns"><button class="btn" data-close>Cancel</button><button class="btn primary" id="f_ok">Save</button></div>`);
+  $("f_ok").onclick = async () => {
+    const v = +$("f_stop").value;
+    if (v < +p.stop) { $("f_err").textContent = "Moving a stop-loss lower increases your risk. Keep it, or sell."; return; }
+    try { await post("/api/position", { action: "stop", symbol: sym, stop: v }); closeSheet(); toast("Stop updated"); await load(); } catch (e) { $("f_err").textContent = e.message; }
+  };
+}
+
+// ======================================================================
+// stock detail
+// ======================================================================
+let current = null, range = 90;
+async function openStock(sym) {
+  $("detailIn").innerHTML = `<div class="dtop"><button class="iconbtn" data-back aria-label="Back"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M15 18l-6-6 6-6" stroke-linecap="round"/></svg></button><div class="t">${esc(sym)}</div></div><div class="skel"></div><div class="skel" style="margin-top:10px;height:240px"></div>`;
+  $("detail").hidden = false; requestAnimationFrame(() => $("detail").classList.add("open"));
+  $("detailIn").querySelector("[data-back]").onclick = closeStock;
+  history.pushState({ stock: sym }, "");
+  const r = await (await fetch("/api/stock?symbol=" + encodeURIComponent(sym))).json();
+  if (r.error) { $("detailIn").insertAdjacentHTML("beforeend", `<div class="card empty"><b>No data yet</b>${esc(r.error)}</div>`); return; }
+  current = r; renderDetail(r);
+}
+function closeStock() { $("detail").classList.remove("open"); setTimeout(() => { $("detail").hidden = true; }, 280); current = null; }
+window.addEventListener("popstate", () => { if (!$("detail").hidden) closeStock(); });
+
+function renderDetail(r) {
+  const st = STAGE[r.stage] || STAGE.neutral, m = r.metrics, p = r.plan, fo = r.fo;
+  const watching = D.watchlist.some(w => w.symbol === r.symbol);
+  const sig = r.direction === "down" ? r.signals_down : r.signals_up;
+  const termOf = { "Uptrend": "sma", "Downtrend": "sma", "Near breakout": "breakout", "Near breakdown": "breakdown", "Coiling": "coiling",
+    "Buyers taking delivery": "delivery", "Sellers in control": "volume", "Stronger than market": "rs", "Weaker than market": "rs",
+    "Futures: fresh buying": "buildup", "Futures: fresh selling": "buildup" };
+  let h = `<div class="dtop"><button class="iconbtn" data-back aria-label="Back"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M15 18l-6-6 6-6" stroke-linecap="round"/></svg></button>
+      <div class="t">${esc(r.symbol)}</div>
+      <button class="iconbtn star ${watching ? "on" : ""}" id="starBtn" aria-label="${watching ? "Remove from" : "Add to"} watchlist"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" stroke-linejoin="round"/></svg></button></div>
+    <div class="co" style="font-size:13px">${esc(r.company)} · ${esc(r.industry)}</div>
+    <div style="display:flex;align-items:baseline;gap:10px;margin-top:4px"><span class="price-xl">₹${nf(r.last)}</span><span class="chg ${cls(r.chg_pct)}" style="font-size:15px">${pc(r.chg_pct)}</span></div>
+    <div class="banner b-${r.stage}">${st[0]}<small>${esc(st[1])}${r.stage === "breakout" || r.stage === "setting-up" ? q("breakout") : r.stage === "breakdown" || r.stage === "weakening" ? q("breakdown") : ""}</small></div>
+
+    <div class="card chartcard" style="margin-top:12px">
+      <div class="chips">${[[60, "3M"], [90, "4M"], [130, "6M"]].map(([n, l]) => `<button aria-pressed="${range === n}" data-range="${n}">${l}</button>`).join("")}</div>
+      <div id="chart"></div><div class="readout" id="readout">Tap the chart to see any day.</div>
+    </div>
+
+    <div class="sec"><h2>The checklist</h2><span class="count">${sig.filter(s => s.ok).length} of ${sig.length} pass</span></div>
+    <div class="card"><div class="score">${ring(r.direction === "down" ? r.down_score : r.up_score, r.direction)}<div><b>${r.direction === "down" ? "Breakdown" : "Breakout"} readiness</b>${q("score")}<div class="muted">Each check uses today's actual numbers.</div></div></div>
+      <ul class="check" style="margin-top:8px">${sig.map(s => `<li><span class="ck ${s.ok ? "y" : "n"}">${s.ok ? "✓" : "–"}</span><div><b>${esc(s.name)}${termOf[s.name] ? q(termOf[s.name]) : ""}</b><span>${esc(s.detail)}</span></div></li>`).join("")}</ul></div>`;
+
+  if (p && p.entry && r.direction === "up" && p.fits === false) {
+    h += `<div class="sec"><h2>Trade plan for ₹50,000</h2></div><div class="card"><b>Doesn't fit your capital</b><p class="muted" style="margin:6px 0 0">${esc(p.fit_note)}. Watching it still teaches you how setups behave.</p></div>`;
+  } else if (p && p.entry && r.direction === "up") {
+    h += `<div class="sec"><h2>Trade plan for ₹50,000</h2></div>
+    <div class="card"><p class="muted" style="margin:0 0 10px">${p.trigger === "now" ? "The breakout is happening: this is the plan if you buy now." : `Not yet. Buy only ${esc(p.trigger)}.`}</p>
+      <div class="grid2">
+        <div class="kv"><small>${p.trigger === "now" ? "Buy up to" : "Buy above"}</small><b>₹${nf(p.entry)}</b></div>
+        <div class="kv"><small>Stop-loss${q("stop")}</small><b>₹${nf(p.stop)}</b><em>${nf(p.risk_pct_price, 1)}% below entry</em></div>
+        <div class="kv"><small>Shares${q("qty")}</small><b>${p.qty}</b><em>costs ${rs(p.cost)}</em></div>
+        <div class="kv"><small>Risk${q("risk")}</small><b>${rs(p.risk)}</b><em>if the stop is hit</em></div>
+        <div class="kv"><small>First target${q("target")}</small><b>₹${nf(p.target)}</b><em>2× your risk</em></div>
+        <div class="kv"><small>Rule</small><b style="font-size:14px">Sell if it closes below the stop</b></div>
+      </div>
+      <div class="btns"><button class="btn primary" id="boughtBtn">I bought this</button></div></div>`;
+  }
+  if (fo) {
+    const o = p && p.option;
+    h += `<div class="sec"><h2>Futures & options</h2></div>
+    <div class="card"><div class="grid2">
+      <div class="kv"><small>Positions trend${q("buildup")}</small><b style="font-size:15px">${esc(fo.buildup || "—")}</b><em>${fo.oi_chg5_pct == null ? "" : `futures positions ${pc(fo.oi_chg5_pct, 1)} in 5 days`}</em></div>
+      <div class="kv"><small>Put/call ratio${q("pcr")}</small><b>${nf(fo.pcr, 2)}</b></div>
+      <div class="kv"><small>Call wall${q("wall")}</small><b>₹${nf(fo.max_call, 0)}</b><em>likely ceiling</em></div>
+      <div class="kv"><small>Put wall</small><b>₹${nf(fo.max_put, 0)}</b><em>likely floor</em></div></div>
+      ${o ? `<div class="banner ${o.affordable ? "b-setting-up" : "b-neutral"}" style="margin-top:10px">${o.type === "CE" ? "Call" : "Put"} option idea: ${o.affordable ? "fits your limit" : "practice only"}<small>One lot ≈ ${rs(o.est_lot_cost)} (${nf(o.lot, 0)} units × about ₹${nf(o.est_premium, 1)}, an estimate). ${o.affordable ? "" : "That's more than your ₹5,000 option limit."}${q("lot")}</small></div>` : ""}
+    </div>`;
+  }
+  h += `<div class="sec"><h2>Key numbers</h2></div><div class="grid2">
+    <div class="kv"><small>Volume${q("volume")}</small><b>${m.vol_ratio == null ? "—" : nf(m.vol_ratio, 1) + "×"}</b><em>${nf((m.volume || 0) / 1e5, 1)} lakh vs ${nf((m.vol20 || 0) / 1e5, 1)} lakh normal</em></div>
+    <div class="kv"><small>Delivery${q("delivery")}</small><b>${nf(m.deliv5, 1)}%</b><em>vs ${nf(m.deliv60, 1)}% usual</em></div>
+    <div class="kv"><small>52-week range</small><b style="font-size:14px">₹${nf(m.lo52, 0)} – ₹${nf(m.hi52, 0)}</b><em>${nf((r.last / m.hi52 - 1) * 100, 1)}% from the high</em></div>
+    <div class="kv"><small>3 months${q("rs")}</small><b class="${cls(m.ret63)}">${pc(m.ret63, 1)}</b><em>vs market: ${m.rs == null ? "—" : (m.rs >= 0 ? "+" : "−") + nf(Math.abs(m.rs), 1) + " pts"}</em></div>
+    <div class="kv"><small>50-day avg${q("sma")}</small><b>₹${nf(m.sma50, 0)}</b></div>
+    <div class="kv"><small>200-day avg</small><b>₹${nf(m.sma200, 0)}</b></div></div>
+    <p class="muted" style="margin-top:18px;text-align:center">Data through ${esc(D.snapshot_at || D.asof)}. Suggestions only; never an order.</p>`;
+  $("detailIn").innerHTML = h;
+  $("detailIn").querySelector("[data-back]").onclick = () => history.back();
+  $("starBtn").onclick = async () => { await watch(r.symbol, !watching); renderDetail(current); };
+  const bb = $("boughtBtn"); if (bb) bb.onclick = () => tradeForm({ symbol: r.symbol, qty: p.qty, price: p.entry, stop: p.stop });
+  $("detailIn").querySelectorAll("[data-range]").forEach(b => b.onclick = () => { range = +b.dataset.range; renderDetail(current); });
+  drawCandles(r);
+}
+
+// candlesticks + 50-day average + volume + plan levels
+function drawCandles(r) {
+  const box = $("chart"), W = Math.max(300, box.clientWidth), H = 250, VH = 46, m = { l: 6, r: 52, t: 10, b: 18 };
+  const bars = r.bars.slice(-range); if (!bars.length) return;
+  const closes = r.bars.map(b => b.c), offset = r.bars.length - bars.length;
+  const sma = bars.map((_, i) => { const j = offset + i; return j >= 49 ? closes.slice(j - 49, j + 1).reduce((a, b) => a + b, 0) / 50 : null; });
+  const lv = [];
+  if (r.plan && r.plan.entry && r.direction === "up") lv.push(["entry", r.plan.entry, "var(--accent)"], ["stop", r.plan.stop, "var(--down)"]);
+  lv.push([r.direction === "down" ? "low" : "high", r.direction === "down" ? r.metrics.ll20 : r.metrics.hh20, "var(--text-3)"]);
+  const lo = Math.min(...bars.map(b => b.l), ...lv.map(x => x[1])), hi = Math.max(...bars.map(b => b.h), ...lv.map(x => x[1]));
+  const pad = (hi - lo) * 0.06, y0 = lo - pad, y1 = hi + pad;
+  const PH = H - VH - m.t - m.b, cw = (W - m.l - m.r) / bars.length;
+  const X = i => m.l + i * cw + cw / 2, Y = v => m.t + (1 - (v - y0) / (y1 - y0)) * PH;
+  const vmax = Math.max(...bars.map(b => b.v)) || 1, VY = v => H - m.b - (v / vmax) * (VH - 6);
+  let g = "";
+  for (let k = 0; k <= 3; k++) { const v = y0 + (y1 - y0) * k / 3; g += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)"/><text x="${W - m.r + 6}" y="${Y(v) + 3}">${nf(v, 0)}</text>`; }
+  bars.forEach((b, i) => {
+    const upc = b.c >= b.o, col = upc ? "var(--up)" : "var(--down)", bw = Math.max(1, cw * 0.62);
+    g += `<rect x="${X(i) - bw / 2}" y="${VY(b.v)}" width="${bw}" height="${H - m.b - VY(b.v)}" fill="${col}" opacity=".28"/>`;
+    g += `<line x1="${X(i)}" x2="${X(i)}" y1="${Y(b.h)}" y2="${Y(b.l)}" stroke="${col}" stroke-width="1"/>`;
+    g += `<rect x="${X(i) - bw / 2}" y="${Math.min(Y(b.o), Y(b.c))}" width="${bw}" height="${Math.max(1, Math.abs(Y(b.o) - Y(b.c)))}" fill="${col}" rx="${bw > 4 ? 1 : 0}"/>`;
+  });
+  const sp = sma.map((v, i) => v == null ? null : `${X(i).toFixed(1)} ${Y(v).toFixed(1)}`).filter(Boolean);
+  if (sp.length > 1) g += `<path d="M${sp.join("L")}" fill="none" stroke="var(--accent)" stroke-width="1.6" opacity=".9"/>`;
+  // label tags on the right, nudged apart so they never overlap
+  const tags = lv.map(([name, v, c]) => ({ name, v, c, y: Y(v) })).sort((a, b) => a.y - b.y);
+  for (let i = 1; i < tags.length; i++) if (tags[i].y - tags[i - 1].y < 17) tags[i].y = tags[i - 1].y + 17;
+  for (const t of tags) g += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(t.v)}" y2="${Y(t.v)}" stroke="${t.c}" stroke-dasharray="4 3"/>
+    <rect x="${W - m.r + 2}" y="${t.y - 8}" width="${m.r - 4}" height="16" rx="4" fill="${t.c}" opacity=".18"/><text x="${W - m.r + 6}" y="${t.y + 3}" style="fill:${t.c};font-weight:700">${t.name === "entry" ? "buy" : t.name}</text>`;
+  const mo = (d) => new Date(d + "T00:00:00").toLocaleDateString("en-IN", { month: "short" });
+  let lastM = "";
+  bars.forEach((b, i) => { const mm = mo(b.d); if (mm !== lastM && i > 2) { g += `<text x="${X(i)}" y="${H - 4}" text-anchor="middle">${mm}</text>`; } lastM = mm; });
+  g += `<line id="cx" y1="${m.t}" y2="${H - m.b}" stroke="var(--text-2)" visibility="hidden"/><rect id="hit" x="${m.l}" y="0" width="${W - m.l - m.r}" height="${H}" fill="transparent" style="touch-action:pan-y"/>`;
+  box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="Daily price candles with 50-day average, volume and plan levels">${g}</svg>`;
+  const svg = box.querySelector("svg"), cx = svg.querySelector("#cx");
+  const show = ev => {
+    const rc = svg.getBoundingClientRect(), x = (ev.clientX - rc.left) * (W / rc.width), i = Math.max(0, Math.min(bars.length - 1, Math.floor((x - m.l) / cw))), b = bars[i];
+    cx.setAttribute("x1", X(i)); cx.setAttribute("x2", X(i)); cx.setAttribute("visibility", "visible");
+    const chg = i > 0 ? (b.c / bars[i - 1].c - 1) * 100 : null;
+    $("readout").innerHTML = `<b>${new Date(b.d + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</b> · close ₹${nf(b.c)} <span class="${cls(chg)}">${chg == null ? "" : pc(chg, 1)}</span> · vol ${nf(b.v / 1e5, 1)}L${b.dp != null ? ` · delivery ${nf(b.dp, 0)}%` : ""}`;
+  };
+  svg.addEventListener("pointermove", show); svg.addEventListener("pointerdown", show);
+}
+
+// ======================================================================
+// learn
+// ======================================================================
+$("learnBtn").onclick = () => openSheet(`<h3>How Swing works</h3>
+  <p><b>Every day</b> your phone collects prices, volume, delivery and futures data for the Nifty 200.</p>
+  <p><b>The radar</b> scores each stock on six checks: trend, how close it is to breaking out, coiling, buyers taking delivery, strength vs the market, and futures activity. 55+ out of 100 makes the list.</p>
+  <p><b>Today</b> turns that into actions: <span class="verdict v-BUY">BUY</span> on a confirmed breakout, <span class="verdict v-WATCH">WATCH</span> when close, <span class="verdict v-SELL">SELL</span> when your stop is hit, <span class="verdict v-AVOID">AVOID</span> when breaking down.</p>
+  <p><b>Every buy idea</b> is sized for your ₹50,000: at most ₹500 lost if wrong, at most ₹12,500 in one stock, at most 5 positions.</p>
+  <div class="ex">This app never places orders and can be wrong. Stop-losses are what keep a bad call small.</div>
+  <button class="btn primary" style="width:100%;margin-top:14px" data-close>Got it</button>`);
+
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+load();
+setInterval(() => { if (document.visibilityState === "visible" && $("detail").hidden) load(); }, 120000);
+</script>
+</body>
+</html>

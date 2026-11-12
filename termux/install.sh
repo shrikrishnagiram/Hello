@@ -51,6 +51,10 @@ make_cmd market-status   'exec bash "$HOME/Hello/termux/market-status.sh"'
 make_cmd market-selftest 'cd "$HOME/Hello" && exec python -m market selftest'
 make_cmd market-backfill 'cd "$HOME/Hello" && exec python -m market backfill "$@"'
 make_cmd market-snapshot 'cd "$HOME/Hello" && exec python -m market snapshot'
+# Swing stocks app
+make_cmd stocks          'exec bash "$HOME/Hello/termux/stocks-start.sh"'
+make_cmd stocks-demo     'pkill -f "python stocks_app.py"; STOCKS_DEMO=1 exec bash "$HOME/Hello/termux/stocks-start.sh"'
+make_cmd stocks-stop     'pkill -f "python stocks_app.py" && echo "Swing stopped." || echo "Swing was not running."'
 # Remove aliases written by older versions of this installer.
 [ -f "$HOME/.bashrc" ] && sed -i '/# strangle-scanner$/d' "$HOME/.bashrc"
 
