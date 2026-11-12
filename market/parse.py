@@ -35,7 +35,24 @@ def num(v):
 # Live (JSON API)
 # --------------------------------------------------------------------------- #
 QUOTE_FIELDS = ["symbol", "open", "high", "low", "last", "prev_close", "change_pct",
-                "volume", "value_cr", "year_high", "year_low", "updated"]
+                "volume", "value_cr", "year_high", "year_low", "updated", "source"]
+
+
+def index_list(text: str) -> list[dict]:
+    """NSE constituents CSV (Company Name, Industry, Symbol, Series, ISIN Code) -> [{symbol, company, industry}]."""
+    rdr = csv.DictReader(io.StringIO(text.lstrip("\ufeff")))
+    cols = {c.strip().lower(): c for c in (rdr.fieldnames or [])}
+    if "symbol" not in cols:
+        raise ParseError(f"index list: no Symbol column; got {list(cols)[:10]}")
+    out = []
+    for r in rdr:
+        sym = (r.get(cols["symbol"]) or "").strip()
+        if sym:
+            out.append({"symbol": sym, "company": (r.get(cols.get("company name", ""), "") or "").strip(),
+                        "industry": (r.get(cols.get("industry", ""), "") or "").strip()})
+    if len(out) < 10:
+        raise ParseError(f"index list: only {len(out)} rows")
+    return out
 
 
 def index_quotes(js: dict) -> tuple[list[dict], dict | None]:

@@ -6,7 +6,7 @@ import json
 from datetime import date, datetime, timedelta
 
 from . import config, parse, store
-from .nse import NSEClient, NSEError, unzip_first, url_fo_bhav, url_sec_bhav
+from .nse import NSEClient, NSEError, unzip_first, url_fo_bhav, url_index_list, url_sec_bhav
 
 
 # --------------------------------------------------------------------------- #
@@ -48,32 +48,86 @@ def is_trading_day(d: date, hol: set[date]) -> bool:
 # --------------------------------------------------------------------------- #
 # Intraday
 # --------------------------------------------------------------------------- #
-def universe_quotes(client: NSEClient) -> tuple[list[dict], str]:
-    """Nifty 200 quotes; falls back to Nifty 100 + Nifty Midcap 100 if NSE refuses NIFTY 200."""
+def universe_list(client: NSEClient) -> list[str]:
+    """Nifty 200 symbols from NSE's official constituents file (refreshed once a day)."""
+    p = store.root() / "meta" / "universe.csv"
+    today = config.now_ist().date()
+    if p.exists() and datetime.fromtimestamp(p.stat().st_mtime, config.IST).date() == today and store.read_universe():
+        return store.read_universe()
     try:
-        rows, _ = parse.index_quotes(client.json("equity-stockIndices", {"index": config.UNIVERSE_INDEX}))
-        return rows, config.UNIVERSE_INDEX
-    except (NSEError, parse.ParseError) as first:
-        rows, seen = [], set()
-        for part in config.UNIVERSE_PARTS:
-            try:
-                part_rows, _ = parse.index_quotes(client.json("equity-stockIndices", {"index": part}))
-            except (NSEError, parse.ParseError) as e:
-                raise NSEError(f"{config.UNIVERSE_INDEX} failed ({first}); backup {part} also failed ({e})") from None
-            for r in part_rows:
-                if r["symbol"] not in seen:
-                    seen.add(r["symbol"])
-                    rows.append(r)
-        return rows, " + ".join(config.UNIVERSE_PARTS)
+        blob = client.file(url_index_list(config.UNIVERSE_INDEX))
+        if blob is None:
+            raise NSEError("constituents file not found")
+        rows = parse.index_list(blob.decode("utf-8", errors="replace"))
+        store.write_universe(rows)
+        return [r["symbol"] for r in rows]
+    except (NSEError, parse.ParseError):
+        syms = store.read_universe()
+        if syms:
+            return syms
+        raise
+
+
+def universe_quotes(client: NSEClient, yahoo=None) -> tuple[list[dict], str]:
+    """Prices & volume for the Nifty 200.
+
+    1) NSE's index feed (retired in 2026, kept in case it returns)
+    2) Yahoo Finance, one request per stock (~1 minute for 200)
+    3) NSE per-stock quote page (slower, heavier on NSE)
+    """
+    errors = []
+    try:
+        rows, _ = parse.index_quotes(client.json("equity-stockIndices", {"index": config.UNIVERSE_INDEX}, retries=1))
+        for r in rows:
+            r["source"] = "nse-index"
+        if not store.read_universe():
+            store.write_universe([r["symbol"] for r in rows if r["symbol"]])
+        return rows, "NSE index feed"
+    except (NSEError, parse.ParseError) as e:
+        errors.append(f"NSE index feed: {e}")
+    symbols = universe_list(client)
+    from .yahoo import YahooClient, YahooError
+    y = yahoo or YahooClient()
+    rows, fails = [], []
+    for sym in symbols:
+        try:
+            r = y.quote(sym)
+            r["source"] = "yahoo"
+            rows.append(r)
+        except YahooError as e:
+            fails.append(str(e))
+        if len(fails) >= 15 and not rows:
+            break                      # Yahoo clearly not working; don't hammer it
+    if len(rows) >= 0.8 * len(symbols):
+        return rows, f"Yahoo Finance ({len(rows)}/{len(symbols)})"
+    errors.append(f"Yahoo: {len(rows)}/{len(symbols)} ok, e.g. {fails[0] if fails else '-'}")
+    got = {r["symbol"] for r in rows}
+    for sym in symbols:
+        if sym in got:
+            continue
+        try:
+            js = client.json("quote-equity", {"symbol": sym}, retries=1)
+            pi = js.get("priceInfo") or {}
+            hl = pi.get("intraDayHighLow") or {}
+            rows.append({"symbol": sym, "open": parse.num(pi.get("open")), "high": parse.num(hl.get("max")),
+                         "low": parse.num(hl.get("min")), "last": parse.num(pi.get("lastPrice")),
+                         "prev_close": parse.num(pi.get("previousClose")), "change_pct": parse.num(pi.get("pChange")),
+                         "volume": None, "source": "nse-quote"})
+        except (NSEError, AttributeError) as e:
+            errors.append(f"NSE quote {sym}: {e}")
+            if len(rows) == 0 and len(errors) > 10:
+                break
+    if len(rows) >= 0.5 * len(symbols):
+        return rows, f"mixed sources ({len(rows)}/{len(symbols)})"
+    raise NSEError("could not get Nifty 200 prices: " + " | ".join(errors[:4]))
 
 
 def snapshot(client: NSEClient, when: datetime | None = None) -> str:
     """Nifty 200 prices & volume + indices + F&O open interest. ~3-4 requests."""
     when = when or config.now_ist()
-    rows, _src = universe_quotes(client)
+    rows, src = universe_quotes(client)
     store.write_rows(store.snap_path("quotes", when), rows, parse.QUOTE_FIELDS)
-    store.write_universe([r["symbol"] for r in rows if r["symbol"]])
-    msg = [f"{len(rows)} stocks"]
+    msg = [f"{len(rows)} stocks via {src}"]
     try:
         ind = parse.all_indices(client.json("allIndices"))
         store.write_rows(store.snap_path("indices", when), ind, parse.INDEX_FIELDS)
@@ -216,7 +270,7 @@ def selftest(client: NSEClient) -> list[tuple[str, bool, str]]:
         except Exception as e:
             res.append((name, False, f"{type(e).__name__}: {e}"[:300]))
 
-    t("Nifty 200 prices", lambda: (lambda r: f"{len(r[0])} stocks via {r[1]}, e.g. {r[0][0]['symbol']} ₹{r[0][0]['last']}")(
+    t("Nifty 200 prices", lambda: (lambda r: f"{len(r[0])} stocks via {r[1]}, e.g. {r[0][0]['symbol']} ₹{r[0][0]['last']}, volume {r[0][0]['volume']}")(
         universe_quotes(client)))
     t("Indices & VIX", lambda: (lambda r: ", ".join(f"{x['index']} {x['last']}" for x in r[:3]))(
         parse.all_indices(client.json("allIndices"))))

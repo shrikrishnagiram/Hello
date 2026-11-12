@@ -54,17 +54,24 @@ def read_rows(path: Path) -> list[dict]:
         return list(csv.DictReader(fh))
 
 
-def write_universe(symbols: list[str]) -> None:
+def write_universe(rows) -> None:
+    """rows: list of symbols, or of {symbol, company, industry} dicts."""
+    rows = [r if isinstance(r, dict) else {"symbol": r} for r in rows]
     p = root() / "meta" / "universe.csv"
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text("symbol\n" + "\n".join(sorted(symbols)) + "\n")
+    buf = io.StringIO()
+    w = csv.DictWriter(buf, fieldnames=["symbol", "company", "industry"], extrasaction="ignore")
+    w.writeheader()
+    for r in sorted(rows, key=lambda r: r["symbol"]):
+        w.writerow(r)
+    p.write_text(buf.getvalue())
 
 
 def read_universe() -> list[str]:
     p = root() / "meta" / "universe.csv"
     if not p.exists():
         return []
-    return [l.strip() for l in p.read_text().splitlines()[1:] if l.strip()]
+    return [r["symbol"].strip() for r in csv.DictReader(io.StringIO(p.read_text())) if r.get("symbol")]
 
 
 def read_list(name: str) -> list[str]:

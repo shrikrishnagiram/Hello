@@ -109,3 +109,12 @@ def url_sec_bhav(d) -> str:
 def url_fo_bhav(d) -> str:
     """F&O daily file (UDiFF format) with every contract's price and open interest."""
     return f"{ARCHIVES}/content/fo/BhavCopy_NSE_FO_0_0_0_{d:%Y%m%d}_F_0000.csv.zip"
+
+
+INDEX_LIST_FILES = {"NIFTY 200": "ind_nifty200list.csv", "NIFTY 100": "ind_nifty100list.csv",
+                    "NIFTY MIDCAP 100": "ind_niftymidcap100list.csv", "NIFTY 50": "ind_nifty50list.csv"}
+
+
+def url_index_list(index: str) -> str:
+    """NSE's official constituents file for an index (symbol, company, industry)."""
+    return f"{ARCHIVES}/content/indices/{INDEX_LIST_FILES[index]}"

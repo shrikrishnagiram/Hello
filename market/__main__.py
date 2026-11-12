@@ -25,7 +25,7 @@ def main(argv: list[str]) -> int:
         daemon.run()
         return 0
     if cmd == "selftest":
-        print("Checking NSE sources from this phone (takes ~30 seconds)...\n")
+        print("Checking market data sources from this phone (takes about 2 minutes)...\n")
         res = jobs.selftest(NSEClient())
         for name, ok, msg in res:
             print(f"{'✅' if ok else '❌'} {name}\n     {msg}\n")

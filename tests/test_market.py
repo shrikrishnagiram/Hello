@@ -112,7 +112,7 @@ class FakeClient:
     def __init__(self, fail=()):
         self.calls, self.fail = [], set(fail)
 
-    def json(self, path, params=None):
+    def json(self, path, params=None, retries=3):
         self.calls.append(path)
         if path in self.fail:
             raise jobs.NSEError(f"{path} failed (HTTP 403)")
@@ -210,23 +210,71 @@ class TestSync(unittest.TestCase):
             self.assertIn("snap", log)
 
 
+
+
+class TestUniverseSources(unittest.TestCase):
+    """NSE retired equity-stockIndices (404) in 2026: list from NSE's file, prices from Yahoo."""
+    LIST_CSV = "\ufeffCompany Name,Industry,Symbol,Series,ISIN Code\n" + "".join(
+        f"Co {i},Industry {i % 3},SYM{i},EQ,INE{i:09d}\n" for i in range(12)) + "Kalyan Jewellers India Ltd.,Consumer Durables,KALYANKJIL,EQ,INE303R01014\n"
+    YJS = {"chart": {"result": [{"meta": {"symbol": "KALYANKJIL.NS", "regularMarketPrice": 698.4,
+            "regularMarketDayHigh": 702.3, "regularMarketDayLow": 671.0, "regularMarketVolume": 18400000,
+            "chartPreviousClose": 600.0, "fiftyTwoWeekHigh": 702.3, "fiftyTwoWeekLow": 399.5, "regularMarketTime": 1762933500},
+            "timestamp": [1, 2], "indicators": {"quote": [{"open": [661, 675], "high": [689, 702.3], "low": [660, 671],
+            "close": [668.2, 698.4], "volume": [17370000, 18400000]}]}}], "error": None}}
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.p = mock.patch.object(config, "DATA_DIR", Path(self.tmp.name) / "data")
+        self.p.start()
+
+    def tearDown(self):
+        self.p.stop()
+        self.tmp.cleanup()
+
+    def test_index_list_and_yahoo_parsers(self):
+        rows = parse.index_list(self.LIST_CSV)
+        self.assertEqual(rows[-1], {"symbol": "KALYANKJIL", "company": "Kalyan Jewellers India Ltd.", "industry": "Consumer Durables"})
+        from market import yahoo
+        q = yahoo.parse_chart("KALYANKJIL", self.YJS)
+        self.assertEqual((q["last"], q["open"], q["high"], q["volume"], q["prev_close"]), (698.4, 675, 702.3, 18400000, 668.2))
+        self.assertAlmostEqual(q["change_pct"], (698.4 - 668.2) / 668.2 * 100)
+        with self.assertRaises(yahoo.YahooError):
+            yahoo.parse_chart("X", {"chart": {"result": None, "error": {"code": "Not Found"}}})
+
+    def _client(self):
+        test = self
+        class C(FakeClient):
+            def json(self, path, params=None, retries=3):
+                self.calls.append(path)
+                if path in ("equity-stockIndices", "quote-equity"):
+                    raise jobs.NSEError(f"{path} failed (HTTP 404)")
+                return super().json(path, params, retries)
+            def file(self, url):
+                return test.LIST_CSV.encode() if "ind_nifty200list" in url else super().file(url)
+        return C()
+
+    def test_yahoo_used_when_nse_feed_retired(self):
+        from market import yahoo
+        class Y:
+            def quote(self, sym):
+                if sym == "SYM3":
+                    raise yahoo.YahooError("SYM3: HTTP 404")
+                return dict(yahoo.parse_chart(sym, TestUniverseSources.YJS), symbol=sym)
+        rows, src = jobs.universe_quotes(self._client(), yahoo=Y())
+        self.assertEqual(len(rows), 12)                          # 13 listed, one failed
+        self.assertTrue(src.startswith("Yahoo Finance (12/13)"))
+        self.assertEqual(store.read_universe()[0], "KALYANKJIL")  # list saved with industries
+        self.assertIn("Consumer Durables", (config.DATA_DIR / "meta" / "universe.csv").read_text())
+
+    def test_clear_error_when_everything_fails(self):
+        from market import yahoo
+        class Y:
+            def quote(self, sym):
+                raise yahoo.YahooError(f"{sym}: HTTP 429")
+        with self.assertRaises(jobs.NSEError) as cm:
+            jobs.universe_quotes(self._client(), yahoo=Y())
+        self.assertIn("Yahoo: 0/13", str(cm.exception))
+
+
 if __name__ == "__main__":
     unittest.main()
-
-
-class TestUniverseFallback(unittest.TestCase):
-    def test_falls_back_to_nifty100_plus_midcap100(self):
-        class C(FakeClient):
-            def json(self, path, params=None):
-                self.calls.append((path, params))
-                if path == "equity-stockIndices" and params["index"] == "NIFTY 200":
-                    raise jobs.NSEError("equity-stockIndices failed (HTTP 404)")
-                if path == "equity-stockIndices":
-                    sym = "TCS" if params["index"] == "NIFTY 100" else "KALYANKJIL"
-                    return {"data": [{"priority": 1, "symbol": params["index"], "lastPrice": 1, "totalTradedVolume": 1},
-                                     {"symbol": sym, "lastPrice": 10, "totalTradedVolume": 5},
-                                     {"symbol": "RELIANCE", "lastPrice": 10, "totalTradedVolume": 5}]}
-                return super().json(path, params)
-        rows, src = jobs.universe_quotes(C())
-        self.assertEqual(src, "NIFTY 100 + NIFTY MIDCAP 100")
-        self.assertEqual(sorted(r["symbol"] for r in rows), ["KALYANKJIL", "RELIANCE", "TCS"])  # de-duplicated
