@@ -212,3 +212,21 @@ class TestSync(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestUniverseFallback(unittest.TestCase):
+    def test_falls_back_to_nifty100_plus_midcap100(self):
+        class C(FakeClient):
+            def json(self, path, params=None):
+                self.calls.append((path, params))
+                if path == "equity-stockIndices" and params["index"] == "NIFTY 200":
+                    raise jobs.NSEError("equity-stockIndices failed (HTTP 404)")
+                if path == "equity-stockIndices":
+                    sym = "TCS" if params["index"] == "NIFTY 100" else "KALYANKJIL"
+                    return {"data": [{"priority": 1, "symbol": params["index"], "lastPrice": 1, "totalTradedVolume": 1},
+                                     {"symbol": sym, "lastPrice": 10, "totalTradedVolume": 5},
+                                     {"symbol": "RELIANCE", "lastPrice": 10, "totalTradedVolume": 5}]}
+                return super().json(path, params)
+        rows, src = jobs.universe_quotes(C())
+        self.assertEqual(src, "NIFTY 100 + NIFTY MIDCAP 100")
+        self.assertEqual(sorted(r["symbol"] for r in rows), ["KALYANKJIL", "RELIANCE", "TCS"])  # de-duplicated

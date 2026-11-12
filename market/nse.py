@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import time
 import zipfile
+from urllib.parse import quote, urlencode
 
 from . import config
 
@@ -52,11 +53,13 @@ class NSEClient:
         if not self._warm:
             self.warm()
         url = f"{API}/{path.lstrip('/')}"
+        if params:  # NSE wants spaces as %20 (not '+'), e.g. index=NIFTY%20200
+            url += "?" + urlencode(params, quote_via=quote)
         last = None
         for attempt in range(retries):
             self._wait()
             try:
-                r = self.s.get(url, params=params, timeout=20)
+                r = self.s.get(url, timeout=20)
                 if r.status_code == 200 and r.text.strip():
                     data = r.json()
                     if data:

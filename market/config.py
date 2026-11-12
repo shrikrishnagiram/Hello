@@ -14,6 +14,8 @@ APP_DIR = Path(__file__).resolve().parent.parent
 LOG_DIR = APP_DIR / "data"
 
 UNIVERSE_INDEX = "NIFTY 200"
+# Nifty 200 = Nifty 100 + Nifty Midcap 100; used if NSE refuses the NIFTY 200 request.
+UNIVERSE_PARTS = ["NIFTY 100", "NIFTY MIDCAP 100"]
 
 # Collection schedule (IST, trading days). Snapshots are timed to land a few
 # minutes before Claude's review checks (10:15, 13:00, 14:45).

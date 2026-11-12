@@ -48,11 +48,29 @@ def is_trading_day(d: date, hol: set[date]) -> bool:
 # --------------------------------------------------------------------------- #
 # Intraday
 # --------------------------------------------------------------------------- #
+def universe_quotes(client: NSEClient) -> tuple[list[dict], str]:
+    """Nifty 200 quotes; falls back to Nifty 100 + Nifty Midcap 100 if NSE refuses NIFTY 200."""
+    try:
+        rows, _ = parse.index_quotes(client.json("equity-stockIndices", {"index": config.UNIVERSE_INDEX}))
+        return rows, config.UNIVERSE_INDEX
+    except (NSEError, parse.ParseError) as first:
+        rows, seen = [], set()
+        for part in config.UNIVERSE_PARTS:
+            try:
+                part_rows, _ = parse.index_quotes(client.json("equity-stockIndices", {"index": part}))
+            except (NSEError, parse.ParseError) as e:
+                raise NSEError(f"{config.UNIVERSE_INDEX} failed ({first}); backup {part} also failed ({e})") from None
+            for r in part_rows:
+                if r["symbol"] not in seen:
+                    seen.add(r["symbol"])
+                    rows.append(r)
+        return rows, " + ".join(config.UNIVERSE_PARTS)
+
+
 def snapshot(client: NSEClient, when: datetime | None = None) -> str:
-    """Nifty 200 prices & volume + indices + F&O open interest. ~3 requests."""
+    """Nifty 200 prices & volume + indices + F&O open interest. ~3-4 requests."""
     when = when or config.now_ist()
-    js = client.json("equity-stockIndices", {"index": config.UNIVERSE_INDEX})
-    rows, idx = parse.index_quotes(js)
+    rows, _src = universe_quotes(client)
     store.write_rows(store.snap_path("quotes", when), rows, parse.QUOTE_FIELDS)
     store.write_universe([r["symbol"] for r in rows if r["symbol"]])
     msg = [f"{len(rows)} stocks"]
@@ -198,8 +216,8 @@ def selftest(client: NSEClient) -> list[tuple[str, bool, str]]:
         except Exception as e:
             res.append((name, False, f"{type(e).__name__}: {e}"[:300]))
 
-    t("Nifty 200 prices", lambda: (lambda r: f"{len(r[0])} stocks, e.g. {r[0][0]['symbol']} ₹{r[0][0]['last']}")(
-        parse.index_quotes(client.json("equity-stockIndices", {"index": config.UNIVERSE_INDEX}))))
+    t("Nifty 200 prices", lambda: (lambda r: f"{len(r[0])} stocks via {r[1]}, e.g. {r[0][0]['symbol']} ₹{r[0][0]['last']}")(
+        universe_quotes(client)))
     t("Indices & VIX", lambda: (lambda r: ", ".join(f"{x['index']} {x['last']}" for x in r[:3]))(
         parse.all_indices(client.json("allIndices"))))
     t("F&O open interest", lambda: (lambda r: f"{len(r)} stocks, e.g. {r[0]['symbol']} OI {r[0]['latest_oi']}")(
