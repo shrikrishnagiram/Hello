@@ -20,6 +20,7 @@ echo "==> Installing the requests library..."
 pip install --disable-pip-version-check requests
 
 echo "==> Getting the scanner code..."
+OLD_SUM=$(cksum "$APP_DIR/termux/install.sh" 2>/dev/null || true)
 if [ -d "$APP_DIR/.git" ]; then
   git -C "$APP_DIR" fetch --quiet origin "$BRANCH"
   git -C "$APP_DIR" checkout --quiet "$BRANCH"
@@ -28,6 +29,12 @@ else
   git clone --quiet -b "$BRANCH" "$REPO_URL" "$APP_DIR"
 fi
 mkdir -p "$APP_DIR/data"
+# If this update brought a newer installer, run the new one instead of this old copy.
+NEW_SUM=$(cksum "$APP_DIR/termux/install.sh" 2>/dev/null || true)
+if [ -n "$OLD_SUM" ] && [ "$OLD_SUM" != "$NEW_SUM" ] && [ -z "$INSTALLER_REEXEC" ]; then
+  echo "==> Installer was updated; continuing with the new version..."
+  INSTALLER_REEXEC=1 exec bash "$APP_DIR/termux/install.sh"
+fi
 
 echo "==> Creating commands and shortcuts..."
 # Real commands on PATH -- work immediately, no need to reopen Termux.
