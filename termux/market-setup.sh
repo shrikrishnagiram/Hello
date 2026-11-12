@@ -13,7 +13,14 @@ echo "Now paste your GitHub key (it starts with github_pat_)."
 echo "Nothing will show on screen while you paste. That's normal. Then press Enter."
 read -r -s GHTOKEN
 echo
-if [ -z "$GHTOKEN" ]; then echo "No key entered. Run market-setup again."; exit 1; fi
+GHTOKEN="$(printf '%s' "$GHTOKEN" | tr -d '[:space:]')"   # drop stray spaces/newlines from pasting
+if [ -z "$GHTOKEN" ]; then echo "No key received (the paste didn't go through). Run market-setup again."; exit 1; fi
+case "$GHTOKEN" in
+  github_pat_*) echo "Key received: starts with github_pat_, ${#GHTOKEN} characters long. (Not shown for safety.)" ;;
+  ghp_*)        echo "Key received: a 'classic' key (ghp_...), ${#GHTOKEN} characters long." ;;
+  *)            echo "That doesn't look like a GitHub key (it should start with github_pat_)."
+                echo "It is ${#GHTOKEN} characters long. Copy the key again and run market-setup again."; exit 1 ;;
+esac
 
 # Save the key for git only, readable only by Termux.
 git config --global credential.helper store
@@ -25,14 +32,27 @@ unset GHTOKEN
 
 URL="https://github.com/$GHUSER/$GHREPO.git"
 echo "Checking access to $GHUSER/$GHREPO ..."
-if ! git ls-remote "$URL" >/dev/null 2>&1; then
+if ERR="$(GIT_TERMINAL_PROMPT=0 git ls-remote "$URL" 2>&1 >/dev/null)"; then ACCESS=ok; else ACCESS=fail; fi
+if [ "$ACCESS" = fail ]; then
+  ERR="$(echo "$ERR" | sed -E 's#https://[^@/ ]+@#https://#g')"   # never print credentials
   echo
-  echo "Could not open $GHUSER/$GHREPO with that key. Check:"
-  echo "  - the repository name and your username are spelled exactly right"
-  echo "  - the key has access to this repository with 'Contents: Read and write'"
-  echo "Then run market-setup again."
+  echo "GitHub said: $ERR"
+  echo
+  if echo "$ERR" | grep -qi "not found"; then
+    echo "This usually means the KEY CAN'T SEE the repository. Fix it in the browser:"
+    echo "  github.com/settings/personal-access-tokens -> tap your key -> Edit"
+    echo "  - Repository access: 'Only select repositories' -> add market-data"
+    echo "  - Permissions -> Contents: 'Read and write'"
+    echo "  - Save (Update). The key itself stays the same; just run market-setup again."
+  elif echo "$ERR" | grep -qiE "authentication|invalid|denied|403|401"; then
+    echo "GitHub rejected the key itself. It may be expired, deleted, or copied incompletely."
+    echo "Create a new key (see the steps) and run market-setup again."
+  else
+    echo "Check your internet connection and run market-setup again."
+  fi
   exit 1
 fi
+echo "Access OK."
 
 if [ -d "$DATA_DIR/.git" ]; then
   echo "Already connected; updating..."
