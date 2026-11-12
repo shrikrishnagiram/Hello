@@ -34,10 +34,11 @@ def main(argv: list[str]) -> int:
             else:
                 print(f"{'✅' if ok else '❌'} {name}\n     {msg}\n", flush=True)
         res = jobs.selftest(NSEClient(), report)
-        good = sum(ok for _, ok, _ in res)
-        print(f"{good}/{len(res)} sources working.")
+        main = [r for r in res if not r[0].startswith("  ·")]
+        good = sum(ok for _, ok, _ in main)
+        print(f"{good}/{len(main)} sources working.")
         print("Data repository:", "ready" if sync.ready() else "NOT SET UP (run market-setup)")
-        return 0 if good == len(res) else 1
+        return 0 if good == len(main) else 1
     if cmd == "snapshot":
         c = NSEClient()
         print(jobs.snapshot(c))

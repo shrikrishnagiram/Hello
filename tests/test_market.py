@@ -226,10 +226,12 @@ class TestUniverseSources(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.p = mock.patch.object(config, "DATA_DIR", Path(self.tmp.name) / "data")
         self.p.start()
+        jobs._PREFERRED["name"] = None
 
     def tearDown(self):
         self.p.stop()
         self.tmp.cleanup()
+        jobs._PREFERRED["name"] = None
 
     def test_index_list_and_yahoo_parsers(self):
         rows = parse.index_list(self.LIST_CSV)
@@ -256,24 +258,64 @@ class TestUniverseSources(unittest.TestCase):
     def test_yahoo_used_when_nse_feed_retired(self):
         from market import yahoo
         class Y:
+            name = "Yahoo Finance"
             def quote(self, sym):
                 if sym == "SYM3":
                     raise yahoo.YahooError("SYM3: HTTP 404")
                 return dict(yahoo.parse_chart(sym, TestUniverseSources.YJS), symbol=sym)
-        rows, src = jobs.universe_quotes(self._client(), yahoo=Y())
-        self.assertEqual(len(rows), 12)                          # 13 listed, one failed
-        self.assertTrue(src.startswith("Yahoo Finance (12/13)"))
+        class G:
+            name = "Groww"
+            def quote(self, sym):
+                return dict(yahoo.parse_chart(sym, TestUniverseSources.YJS), symbol=sym)
+        rows, src = jobs.universe_quotes(self._client(), sources=[Y(), G()])
+        self.assertEqual(len(rows), 12)                          # 13 listed, one failed; 12/13 > 80% so Groww not needed
+        self.assertTrue(src.startswith("Yahoo Finance (12/13)"), src)
         self.assertEqual(store.read_universe()[0], "KALYANKJIL")  # list saved with industries
         self.assertIn("Consumer Durables", (config.DATA_DIR / "meta" / "universe.csv").read_text())
 
     def test_clear_error_when_everything_fails(self):
         from market import yahoo
         class Y:
+            name = "Yahoo Finance"
             def quote(self, sym):
                 raise yahoo.YahooError(f"{sym}: HTTP 429")
+        class C2(type(self._client())):
+            def json(self, path, params=None, retries=3):
+                if path == "live-analysis-oi-spurts-underlyings":
+                    raise jobs.NSEError("oi failed (HTTP 403)")
+                return super().json(path, params, retries)
+        c = C2()
         with self.assertRaises(jobs.NSEError) as cm:
-            jobs.universe_quotes(self._client(), yahoo=Y())
-        self.assertIn("Yahoo: 0/13", str(cm.exception))
+            jobs.universe_quotes(c, sources=[Y()])
+        self.assertIn("Yahoo Finance: SYM0: HTTP 429", str(cm.exception))
+        self.assertLess(sum(1 for x in c.calls if x == "quote-equity"), 1)
+
+    def test_falls_through_to_groww_then_fo_prices(self):
+        from market import yahoo
+        jobs._PREFERRED["name"] = None
+        class Y:
+            name = "Yahoo Finance"
+            def quote(self, sym):
+                raise yahoo.YahooError(f"{sym}: HTTP 429")
+        class G:
+            name = "Groww"
+            calls = 0
+            def quote(self, sym):
+                G.calls += 1
+                return yahoo.parse_groww(sym, {"ltp": 698.4, "open": 675, "high": 702.3, "low": 671,
+                                                "close": 668.2, "dayChange": 30.2, "dayChangePerc": 4.52,
+                                                "volume": 18400000})
+        rows, src = jobs.universe_quotes(self._client(), sources=[Y(), G()])
+        self.assertTrue(src.startswith("Groww (13/13)"), src)
+        self.assertEqual((rows[0]["prev_close"], rows[0]["volume"]), (668.2, 18400000))
+        self.assertEqual(jobs._PREFERRED["name"], "Groww")      # remembered for next time
+        # next run tries Groww first: Yahoo never called
+        class Ynever(Y):
+            def quote(self, sym):
+                raise AssertionError("should not be tried first")
+        rows, src = jobs.universe_quotes(self._client(), sources=[Ynever(), G()])
+        self.assertTrue(src.startswith("Groww"))
+        jobs._PREFERRED["name"] = None
 
 
 if __name__ == "__main__":

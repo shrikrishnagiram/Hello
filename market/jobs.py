@@ -72,54 +72,63 @@ def _quietly(progress):
     return progress or (lambda msg: None)
 
 
-def _yahoo_quotes(symbols, y, progress) -> tuple[list[dict], list[str]]:
-    """Quotes from Yahoo. Gives up within seconds if the first 3 stocks all fail."""
-    from .yahoo import YahooError
+def _alt_quotes(symbols, src, progress) -> tuple[list[dict], list[str]]:
+    """Quotes from an alternative source. Gives up within seconds if the first 3 stocks all fail."""
+    from .yahoo import QuoteError
     rows, fails = [], []
     for i, sym in enumerate(symbols):
         try:
-            r = y.quote(sym)
-            r["source"] = "yahoo"
+            r = src.quote(sym)
+            r["source"] = src.name
             rows.append(r)
-        except YahooError as e:
+        except QuoteError as e:
             fails.append(str(e))
         if i == 2 and not rows:
-            progress(f"    Yahoo isn't answering ({fails[0]}); skipping it.")
+            progress(f"    {src.name} isn't answering ({fails[0]}); skipping it.")
             break
         if (i + 1) % 25 == 0:
-            progress(f"    Yahoo: {i + 1}/{len(symbols)} stocks done...")
+            progress(f"    {src.name}: {i + 1}/{len(symbols)} stocks done...")
     return rows, fails
 
 
-def _nse_quotes(client, symbols, progress) -> tuple[list[dict], list[str]]:
-    """NSE per-stock quote page (price only). Gives up if the first 3 all fail."""
-    rows, fails = [], []
-    for i, sym in enumerate(symbols):
+class NseQuoteSource:
+    """NSE per-stock quote page (price only). Visits the stock's page first, as a browser would."""
+    name = "NSE quote page"
+
+    def __init__(self, client: NSEClient):
+        self.c = client
+
+    def quote(self, sym: str) -> dict:
+        from .yahoo import QuoteError
+        self.c.prime(f"https://www.nseindia.com/get-quotes/equity?symbol={sym}")
         try:
-            js = client.json("quote-equity", {"symbol": sym}, retries=1)
-            pi = js.get("priceInfo") or {}
-            hl = pi.get("intraDayHighLow") or {}
-            rows.append({"symbol": sym, "open": parse.num(pi.get("open")), "high": parse.num(hl.get("max")),
-                         "low": parse.num(hl.get("min")), "last": parse.num(pi.get("lastPrice")),
-                         "prev_close": parse.num(pi.get("previousClose")), "change_pct": parse.num(pi.get("pChange")),
-                         "volume": None, "source": "nse-quote"})
-        except (NSEError, AttributeError) as e:
-            fails.append(f"{sym}: {e}")
-        if i == 2 and not rows:
-            progress(f"    NSE quote page isn't answering either ({fails[0]}).")
-            break
-        if (i + 1) % 25 == 0:
-            progress(f"    NSE quotes: {i + 1}/{len(symbols)} stocks done...")
-    return rows, fails
+            js = self.c.json("quote-equity", {"symbol": sym}, retries=1)
+        except NSEError as e:
+            raise QuoteError(f"{sym}: {e}") from None
+        pi = js.get("priceInfo") or {}
+        hl = pi.get("intraDayHighLow") or {}
+        if parse.num(pi.get("lastPrice")) is None:
+            raise QuoteError(f"{sym}: no price in NSE quote")
+        return {"symbol": sym, "open": parse.num(pi.get("open")), "high": parse.num(hl.get("max")),
+                "low": parse.num(hl.get("min")), "last": parse.num(pi.get("lastPrice")),
+                "prev_close": parse.num(pi.get("previousClose")), "change_pct": parse.num(pi.get("pChange")),
+                "volume": None}
 
 
-def universe_quotes(client: NSEClient, yahoo=None, progress=None, limit: int | None = None) -> tuple[list[dict], str]:
+_PREFERRED = {"name": None}   # remember which source worked, try it first next time
+
+
+def default_sources(client: NSEClient) -> list:
+    from .yahoo import GrowwClient, YahooClient
+    return [YahooClient(), GrowwClient(), NseQuoteSource(client)]
+
+
+def universe_quotes(client: NSEClient, sources=None, progress=None, limit: int | None = None) -> tuple[list[dict], str]:
     """Prices & volume for the Nifty 200 (or the first `limit` stocks, for the self-test).
 
-    1) NSE's index feed (retired in 2026, kept in case it returns)
-    2) Yahoo Finance, one request per stock (~1 minute for 200)
-    3) NSE per-stock quote page (slower, heavier on NSE, no volume)
-    Each source is abandoned within seconds if it doesn't answer.
+    Tries, in order, using the first that answers (each abandoned within seconds):
+      NSE index feed (retired 2026) -> Yahoo -> Groww -> NSE quote page
+      -> last resort: prices of F&O stocks from NSE's open-interest feed (no share volume)
     """
     progress = _quietly(progress)
     errors = []
@@ -137,22 +146,35 @@ def universe_quotes(client: NSEClient, yahoo=None, progress=None, limit: int | N
     symbols = universe_list(client)
     if limit:
         symbols = symbols[:limit]
-    from .yahoo import YahooClient
-    progress(f"    getting prices from Yahoo Finance for {len(symbols)} stocks...")
-    rows, fails = _yahoo_quotes(symbols, yahoo or YahooClient(), progress)
-    if len(rows) >= 0.8 * len(symbols):
-        return rows, f"Yahoo Finance ({len(rows)}/{len(symbols)})"
-    errors.append(f"Yahoo: {len(rows)}/{len(symbols)} ok" + (f", e.g. {fails[0]}" if fails else ""))
-    got = {r["symbol"] for r in rows}
-    rest = [s for s in symbols if s not in got]
-    progress(f"    trying NSE's per-stock quote page for {len(rest)} stocks...")
-    more, nfails = _nse_quotes(client, rest, progress)
-    rows += more
+    srcs = sources if sources is not None else default_sources(client)
+    srcs = sorted(srcs, key=lambda s: s.name != _PREFERRED["name"])
+    rows: list[dict] = []
+    for src in srcs:
+        rest = [s for s in symbols if s not in {r["symbol"] for r in rows}]
+        if not rest:
+            break
+        progress(f"    getting prices from {src.name} for {len(rest)} stocks...")
+        got, fails = _alt_quotes(rest, src, progress)
+        rows += got
+        if got:
+            _PREFERRED["name"] = src.name
+        else:
+            errors.append(f"{src.name}: {fails[0] if fails else 'no data'}")
+        if len(rows) >= 0.8 * len(symbols):
+            names = sorted({r["source"] for r in rows})
+            return rows, f"{' + '.join(names)} ({len(rows)}/{len(symbols)})"
+    progress("    last resort: prices from NSE's F&O open-interest feed...")
+    try:
+        have = {r["symbol"] for r in rows}
+        for r in parse.oi_spurts(client.json("live-analysis-oi-spurts-underlyings")):
+            if r["symbol"] in symbols and r["symbol"] not in have and r["underlying"]:
+                rows.append({"symbol": r["symbol"], "last": r["underlying"], "source": "nse-fo-underlying"})
+    except (NSEError, parse.ParseError) as e:
+        errors.append(f"F&O feed: {e}")
     if len(rows) >= 0.5 * len(symbols):
-        return rows, f"mixed sources ({len(rows)}/{len(symbols)})"
-    if nfails:
-        errors.append(f"NSE quote page: {nfails[0]}")
-    raise NSEError("could not get prices: " + " | ".join(errors[:4]))
+        names = sorted({r["source"] for r in rows})
+        return rows, f"{' + '.join(names)} ({len(rows)}/{len(symbols)}; price only for some, no intraday volume)"
+    raise NSEError("could not get prices: " + " | ".join(errors[:5]))
 
 
 def snapshot(client: NSEClient, when: datetime | None = None) -> str:
@@ -309,6 +331,16 @@ def selftest(client: NSEClient, report=None) -> list[tuple[str, bool, str]]:
 
     t("Stock prices & volume (5 sample stocks)", lambda: (lambda r: f"{len(r[0])} stocks via {r[1]}, e.g. {r[0][0]['symbol']} ₹{r[0][0]['last']}, volume {r[0][0]['volume']}")(
         universe_quotes(client, progress=lambda m: report(None, None, m), limit=5)))
+    def one(src_factory):
+        def run():
+            src = src_factory()
+            q = src.quote("RELIANCE")
+            return f"RELIANCE ₹{q['last']}, volume {q.get('volume')}"
+        return run
+    from .yahoo import GrowwClient, YahooClient
+    t("  · source: Yahoo Finance", one(YahooClient))
+    t("  · source: Groww", one(GrowwClient))
+    t("  · source: NSE quote page", one(lambda: NseQuoteSource(client)))
     t("Indices & VIX", lambda: (lambda r: ", ".join(f"{x['index']} {x['last']}" for x in r[:3]))(
         parse.all_indices(client.json("allIndices"))))
     t("F&O open interest", lambda: (lambda r: f"{len(r)} stocks, e.g. {r[0]['symbol']} OI {r[0]['latest_oi']}")(

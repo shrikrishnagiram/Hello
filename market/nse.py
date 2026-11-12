@@ -49,6 +49,16 @@ class NSEClient:
                 pass
         self._warm = True
 
+    def prime(self, url: str) -> None:
+        """Visit a page first (NSE sets per-page cookies some APIs require)."""
+        if not self._warm:
+            self.warm()
+        self._wait()
+        try:
+            self.s.get(url, timeout=12)
+        except Exception:
+            pass
+
     def json(self, path: str, params: dict | None = None, retries: int = 3):
         if not self._warm:
             self.warm()

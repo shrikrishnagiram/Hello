@@ -1,20 +1,37 @@
-"""Yahoo Finance quotes for NSE stocks (price + volume). Used because NSE retired its
-index-constituents quote feed (equity-stockIndices returns 404 since ~Oct 2026). READ-ONLY."""
+"""Alternative live-price sources for NSE stocks (price + volume). READ-ONLY.
+
+NSE retired its index quote feed (equity-stockIndices: 404 since ~Oct 2026), so
+the hourly Nifty 200 prices come from one of these, whichever answers:
+  YahooClient  - Yahoo Finance chart API, with the cookie/crumb handshake browsers do
+  GrowwClient  - Groww website's public live-price data (no login)
+"""
 
 from __future__ import annotations
 
 import time
 from urllib.parse import quote
 
-CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval=1d&range=5d"
-HEADERS = {"User-Agent": "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36",
-           "Accept": "application/json"}
+UA = ("Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 "
+      "(KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36")
 
 
 class YahooError(RuntimeError):
     pass
 
 
+QuoteError = YahooError   # common error type for all alternative sources
+
+
+def _num(v):
+    try:
+        return None if v is None else float(str(v).replace(",", ""))
+    except ValueError:
+        return None
+
+
+# --------------------------------------------------------------------------- #
+# Yahoo
+# --------------------------------------------------------------------------- #
 def ysym(nse_symbol: str) -> str:
     return f"{nse_symbol}.NS"
 
@@ -44,32 +61,107 @@ def parse_chart(nse_symbol: str, js: dict) -> dict:
             "updated": m.get("regularMarketTime")}
 
 
-class YahooClient:
-    def __init__(self, gap: float = 0.25):
+class _Base:
+    name = "?"
+
+    def __init__(self, gap: float = 0.3):
         import requests
         self.s = requests.Session()
-        self.s.headers.update(HEADERS)
-        self.gap, self._last = gap, 0.0
+        self.s.headers.update({"User-Agent": UA, "Accept": "application/json, text/plain, */*",
+                               "Accept-Language": "en-IN,en;q=0.9"})
+        self.gap, self._last, self._ready = gap, 0.0, False
 
-    def quote(self, nse_symbol: str, retries: int = 2) -> dict:
-        """One stock. Short timeout; a timeout or connection failure is not retried."""
-        last = None
-        for attempt in range(retries):
-            dt = time.time() - self._last
-            if dt < self.gap:
-                time.sleep(self.gap - dt)
-            self._last = time.time()
+    def _pace(self):
+        dt = time.time() - self._last
+        if dt < self.gap:
+            time.sleep(self.gap - dt)
+        self._last = time.time()
+
+    def _get(self, url: str, sym: str, timeout: int = 8):
+        self._pace()
+        try:
+            return self.s.get(url, timeout=timeout)
+        except Exception as e:
+            raise YahooError(f"{sym}: {type(e).__name__}: {str(e)[:120]}") from None
+
+
+class YahooClient(_Base):
+    name = "Yahoo Finance"
+    HOSTS = ["query1.finance.yahoo.com", "query2.finance.yahoo.com"]
+
+    def _handshake(self):
+        """Get the cookie (and crumb) a browser would have; Yahoo answers 429 without them."""
+        self._ready = True
+        for url in ("https://fc.yahoo.com/", "https://finance.yahoo.com/"):
             try:
-                r = self.s.get(CHART.format(sym=quote(ysym(nse_symbol), safe="")), timeout=8)
-                if r.status_code == 200:
-                    return parse_chart(nse_symbol, r.json())
-                last = f"HTTP {r.status_code}"
-                if r.status_code == 404:
-                    break
-            except YahooError:
-                raise
-            except Exception as e:
-                raise YahooError(f"{nse_symbol}: {type(e).__name__}: {str(e)[:120]}") from None
-            if r.status_code == 429:
-                time.sleep(2)
+                self.s.get(url, timeout=8, allow_redirects=True)
+            except Exception:
+                pass
+        try:
+            r = self.s.get("https://query2.finance.yahoo.com/v1/test/getcrumb", timeout=8)
+            self.crumb = r.text.strip() if r.status_code == 200 and len(r.text) < 40 else None
+        except Exception:
+            self.crumb = None
+
+    def quote(self, nse_symbol: str) -> dict:
+        if not self._ready:
+            self._handshake()
+        last = None
+        for host in self.HOSTS:
+            url = f"https://{host}/v8/finance/chart/{quote(ysym(nse_symbol), safe='')}?interval=1d&range=5d"
+            if getattr(self, "crumb", None):
+                url += f"&crumb={quote(self.crumb)}"
+            r = self._get(url, nse_symbol)
+            if r.status_code == 200:
+                return parse_chart(nse_symbol, r.json())
+            last = f"HTTP {r.status_code}"
+            if r.status_code == 404:
+                break
         raise YahooError(f"{nse_symbol}: {last}")
+
+
+# --------------------------------------------------------------------------- #
+# Groww (public website data, no login)
+# --------------------------------------------------------------------------- #
+GROWW_LIVE = "https://groww.in/v1/api/stocks_data/v1/tr_live_prices/exchange/NSE/segment/CASH/{sym}/latest"
+
+
+def parse_groww(nse_symbol: str, js: dict) -> dict:
+    if not isinstance(js, dict):
+        raise YahooError(f"{nse_symbol}: unexpected Groww response")
+    k = {key.lower(): key for key in js}
+    g = lambda *names: next((_num(js[k[n.lower()]]) for n in names if n.lower() in k), None)
+    last = g("ltp", "lastPrice", "price")
+    if last is None:
+        raise YahooError(f"{nse_symbol}: Groww response has no price (fields: {list(js)[:12]})")
+    change = g("dayChange")
+    prev = g("prevClose", "previousClose")
+    if prev is None and change is not None:
+        prev = round(last - change, 2)
+    if prev is None:
+        prev = g("close")
+    return {"symbol": nse_symbol, "open": g("open"), "high": g("high"), "low": g("low"), "last": last,
+            "prev_close": prev, "change_pct": g("dayChangePerc") if g("dayChangePerc") is not None else
+            (((last - prev) / prev * 100) if prev else None),
+            "volume": g("volume", "totalTradedVolume"), "value_cr": None,
+            "year_high": g("yearHighPrice", "high52"), "year_low": g("yearLowPrice", "low52"),
+            "updated": js.get(k["tsinmillis"]) if "tsinmillis" in k else None}
+
+
+class GrowwClient(_Base):
+    name = "Groww"
+
+    def quote(self, nse_symbol: str) -> dict:
+        if not self._ready:
+            self._ready = True
+            try:
+                self.s.get("https://groww.in/", timeout=8)
+            except Exception:
+                pass
+        r = self._get(GROWW_LIVE.format(sym=quote(nse_symbol, safe="")), nse_symbol)
+        if r.status_code != 200:
+            raise YahooError(f"{nse_symbol}: HTTP {r.status_code}")
+        try:
+            return parse_groww(nse_symbol, r.json())
+        except ValueError:
+            raise YahooError(f"{nse_symbol}: Groww sent a non-JSON page") from None
