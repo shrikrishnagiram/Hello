@@ -318,5 +318,22 @@ class TestUniverseSources(unittest.TestCase):
         jobs._PREFERRED["name"] = None
 
 
+
+
+class TestSyncLock(unittest.TestCase):
+    def test_uploads_take_turns(self):
+        import threading, time as _t
+        with tempfile.TemporaryDirectory() as t:
+            (Path(t) / ".git").mkdir()
+            order = []
+            with mock.patch.object(config, "DATA_DIR", Path(t)), \
+                 mock.patch.object(sync, "_push", side_effect=lambda m: (order.append(f"start {m}"), _t.sleep(0.3), order.append(f"end {m}"), "pushed")[-1]):
+                a = threading.Thread(target=sync.push, args=("backfill",)); a.start()
+                _t.sleep(0.05)
+                b = threading.Thread(target=sync.push, args=("snapshot",)); b.start()
+                a.join(); b.join()
+            self.assertEqual(order, ["start backfill", "end backfill", "start snapshot", "end snapshot"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -198,14 +198,14 @@ def snapshot(client: NSEClient, when: datetime | None = None) -> str:
     return "snapshot: " + ", ".join(msg)
 
 
-def detail_symbols(limit: int = config.MAX_DETAIL_SYMBOLS) -> list[str]:
+def detail_symbols(limit: int = config.MAX_DETAIL_SYMBOLS, when: datetime | None = None) -> list[str]:
     """Watchlist + radar; before those exist, the stocks with the biggest F&O position changes."""
     syms = []
     for s in store.read_list("watchlist") + store.read_list("radar"):
         if s not in syms:
             syms.append(s)
     if len(syms) < 10:
-        day = store.root() / "snapshots" / f"{config.now_ist():%Y/%m/%d}"
+        day = store.root() / "snapshots" / f"{(when or config.now_ist()):%Y/%m/%d}"
         files = sorted(day.glob("oi_*.csv.gz")) if day.exists() else []
         if files:
             rows = store.read_rows(files[-1])
@@ -232,7 +232,7 @@ def _nearest_expiry(exps: list[str], today: date, min_days: int = 3) -> str | No
 def detail(client: NSEClient, when: datetime | None = None, symbols: list[str] | None = None) -> str:
     """Option-chain summary for watchlist + radar stocks (2 requests per stock)."""
     when = when or config.now_ist()
-    syms = symbols if symbols is not None else detail_symbols()
+    syms = symbols if symbols is not None else detail_symbols(when=when)
     out, fails = [], []
     for s in syms:
         try:

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import fcntl
 import subprocess
+import time
+from contextlib import contextmanager
 
 from . import config
 
@@ -18,6 +21,26 @@ def _git(*args, check=True, timeout=180) -> str:
     return r.stdout
 
 
+@contextmanager
+def _lock(timeout: int = 300):
+    """Only one upload at a time (the collector and the history download share the repo)."""
+    path = config.DATA_DIR / ".git" / "phone-sync.lock"
+    with open(path, "w") as fh:
+        start = time.time()
+        while True:
+            try:
+                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.time() - start > timeout:
+                    raise SyncError("another upload has been running for 5 minutes; will retry next round")
+                time.sleep(2)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)
+
+
 def ready() -> bool:
     return (config.DATA_DIR / ".git").exists()
 
@@ -26,6 +49,11 @@ def push(message: str) -> str:
     """Commit everything new and push. Rebases on top of Claude's commits first."""
     if not ready():
         raise SyncError(f"No data repository at {config.DATA_DIR}. Run: market-setup")
+    with _lock():
+        return _push(message)
+
+
+def _push(message: str) -> str:
     _git("add", "-A")
     if not _git("status", "--porcelain").strip():
         return "nothing new"
@@ -44,6 +72,11 @@ def push(message: str) -> str:
 def pull() -> str:
     if not ready():
         raise SyncError("No data repository. Run: market-setup")
+    with _lock():
+        return _pull()
+
+
+def _pull() -> str:
     br = _git("rev-parse", "--abbrev-ref", "HEAD").strip()
     _git("pull", "-q", "--rebase", "origin", br)
     return "pulled"
